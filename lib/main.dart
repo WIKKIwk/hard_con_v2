@@ -305,6 +305,9 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
   final http.Client _client = http.Client();
   StreamSubscription<String>? _streamSubscription;
   int _streamGeneration = 0;
+  int _selectedSection = 0;
+  int? _selectedProductIndex;
+  bool _batchRequested = false;
 
   bool _manualLoading = false;
   bool _requestInFlight = false;
@@ -512,172 +515,687 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         ),
         title: Text(server.handshake.serverName),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: scheme.outlineVariant),
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 220),
+        child: _selectedSection == 0
+            ? _DashboardScrollView(
+                key: const ValueKey('server-section'),
+                child: _buildServerSection(context, theme, scheme, server),
+              )
+            : _selectedSection == 1
+            ? _DashboardScrollView(
+                key: const ValueKey('line-section'),
+                child: _buildLineSection(context, theme, scheme, server),
+              )
+            : _DashboardScrollView(
+                key: const ValueKey('control-section'),
+                child: _buildControlSection(context, theme, scheme, server),
+              ),
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedSection,
+        onDestinationSelected: (index) {
+          setState(() {
+            _selectedSection = index;
+          });
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.health_and_safety_outlined),
+            selectedIcon: Icon(Icons.health_and_safety),
+            label: 'Server',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard),
+            label: 'Line',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.tune_outlined),
+            selectedIcon: Icon(Icons.tune),
+            label: 'Control',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildServerSection(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme scheme,
+    DiscoveredServer server,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _ServerHeaderCard(
+          connected: _connected,
+          statusText: _statusText,
+          displayName: server.handshake.displayName,
+          endpoint: server.endpoint.baseUrl,
+          role: server.handshake.role,
+          serverRef: server.handshake.serverRef,
+          latencyMs: server.latencyMs,
+        ),
+        const SizedBox(height: 18),
+        Text(
+          'Server health',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.2,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          _connected
+              ? 'Server live stream va handshake holati shu yerda.'
+              : 'Server offline yoki stream uzilgan. Refresh bilan qayta tekshiriladi.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+        if (_errorText.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            _errorText,
+            style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+          ),
+        ],
+        const SizedBox(height: 16),
+        _SectionCard(
+          child: Column(
+            children: [
+              _TodoRow(
+                icon: Icons.wifi_tethering,
+                title: 'Server',
+                subtitle: _connected
+                    ? _snapshot.serverLabel
+                    : server.endpoint.baseUrl,
+              ),
+              const SizedBox(height: 12),
+              _TodoRow(
+                icon: Icons.monitor_heart_outlined,
+                title: 'Monitor stream',
+                subtitle: _connected
+                    ? 'Live snapshot qabul qilinyapti'
+                    : 'Live stream ulanmagan',
+              ),
+              const SizedBox(height: 12),
+              _TodoRow(
+                icon: Icons.badge_outlined,
+                title: 'Profile',
+                subtitle:
+                    '${server.handshake.displayName} • ${server.handshake.role.toUpperCase()}',
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _manualLoading ? null : () => _refresh(manual: true),
+                icon: const Icon(Icons.refresh_rounded),
+                label: Text(_manualLoading ? 'Refreshing...' : 'Refresh'),
+              ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: widget.onChangeServer,
+                icon: const Icon(Icons.dns_rounded),
+                label: const Text('Servers'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLineSection(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme scheme,
+    DiscoveredServer server,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionCard(
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _connected
-                            ? scheme.secondaryContainer
-                            : scheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        _connected ? 'Connected' : 'Selected server',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: _connected
-                              ? scheme.onSecondaryContainer
-                              : scheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w700,
-                        ),
+                    Text(
+                      'Line overview',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.2,
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(height: 6),
                     Text(
-                      _statusText,
-                      style: theme.textTheme.bodySmall?.copyWith(
+                      _connected
+                          ? 'Tanlangan serverdan live line holati olindi.'
+                          : 'Line holati hozir offline.',
+                      style: theme.textTheme.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  server.handshake.displayName,
-                  style: theme.textTheme.titleLarge?.copyWith(
+              ),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: _connected
+                      ? scheme.secondaryContainer
+                      : scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  _connected ? 'LIVE' : 'OFFLINE',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: _connected
+                        ? scheme.onSecondaryContainer
+                        : scheme.onSurfaceVariant,
                     fontWeight: FontWeight.w800,
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  server.endpoint.baseUrl,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    Chip(label: Text(server.handshake.role.toUpperCase())),
-                    Chip(label: Text(server.handshake.serverRef)),
-                    if (server.latencyMs > 0)
-                      Chip(label: Text('${server.latencyMs} ms')),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 18),
-          Text(
-            'Line overview',
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.2,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _connected
-                ? 'Tanlangan serverdan live holat olindi.'
-                : 'Pastdagi refresh bilan server snapshot qayta olinadi.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          if (_errorText.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              _errorText,
-              style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
-            ),
-          ],
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: scheme.outlineVariant),
-            ),
-            child: _StatusGrid(snapshot: _snapshot),
-          ),
-          const SizedBox(height: 18),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: scheme.outlineVariant),
-            ),
-            child: Column(
-              children: [
-                _TodoRow(
-                  icon: Icons.wifi_tethering,
-                  title: 'Server',
-                  subtitle: _connected
-                      ? _snapshot.serverLabel
-                      : server.endpoint.baseUrl,
-                ),
-                const SizedBox(height: 12),
-                _TodoRow(
-                  icon: Icons.monitor_heart_outlined,
-                  title: 'Monitor',
-                  subtitle: _connected
-                      ? _snapshot.monitorLabel
-                      : 'Scale, Zebra, batch va print request holati',
-                ),
-                const SizedBox(height: 12),
-                _TodoRow(
-                  icon: Icons.tune,
-                  title: 'Printer',
-                  subtitle: _connected
-                      ? _snapshot.printerLabel
-                      : 'Printer trace va action holati',
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _manualLoading
-                      ? null
-                      : () => _refresh(manual: true),
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: Text(_manualLoading ? 'Refreshing...' : 'Refresh'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: widget.onChangeServer,
-                  icon: const Icon(Icons.dns_rounded),
-                  label: const Text('Servers'),
                 ),
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 18),
+        _SectionCard(child: _StatusGrid(snapshot: _snapshot)),
+        const SizedBox(height: 18),
+        _SectionCard(
+          child: Column(
+            children: [
+              _TodoRow(
+                icon: Icons.scale_outlined,
+                title: 'Scale + batch',
+                subtitle: _connected
+                    ? _snapshot.monitorLabel
+                    : 'Scale, Zebra, batch va print request holati',
+              ),
+              const SizedBox(height: 12),
+              _TodoRow(
+                icon: Icons.print_outlined,
+                title: 'Printer trace',
+                subtitle: _connected
+                    ? _snapshot.printerLabel
+                    : 'Printer trace va action holati',
+              ),
+              const SizedBox(height: 12),
+              _TodoRow(
+                icon: Icons.link_outlined,
+                title: 'Current endpoint',
+                subtitle: server.endpoint.baseUrl,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildControlSection(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme scheme,
+    DiscoveredServer server,
+  ) {
+    final selectedProduct = _selectedProductIndex == null
+        ? null
+        : _controlProducts[_selectedProductIndex!];
+    final batchRunning = _batchRequested;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Control panel',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Telegram bot logic keyin shu panelga bo‘lib ko‘chadi. Hozir bu UI draft.',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: batchRunning
+                          ? scheme.secondaryContainer
+                          : scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      batchRunning ? 'BATCH ON' : 'BATCH OFF',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: batchRunning
+                            ? scheme.onSecondaryContainer
+                            : scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: _LiveMetricCard(
+                      title: 'Live kg',
+                      value: _snapshot.scaleValue,
+                      caption: _snapshot.scaleCaption,
+                      icon: Icons.scale_outlined,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _LiveMetricCard(
+                      title: 'Selected product',
+                      value: selectedProduct?.code ?? 'None',
+                      caption: selectedProduct?.name ?? 'Product tanlanmagan',
+                      icon: Icons.inventory_2_outlined,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        Text(
+          'Product selection',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.2,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Hozircha lokal UI. Keyin ERP item tanlash shu yerga ulanadi.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _SectionCard(
+          child: Column(
+            children: [
+              for (var i = 0; i < _controlProducts.length; i++) ...[
+                _ProductOptionTile(
+                  product: _controlProducts[i],
+                  selected: _selectedProductIndex == i,
+                  onTap: () {
+                    setState(() {
+                      _selectedProductIndex = i;
+                    });
+                  },
+                ),
+                if (i != _controlProducts.length - 1)
+                  const SizedBox(height: 10),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        Text(
+          'Batch actions',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.2,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Faqat kerakli control: batch start/stop, mahsulot, live kg.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _SectionCard(
+          child: Column(
+            children: [
+              _TodoRow(
+                icon: Icons.hub_outlined,
+                title: 'Current server',
+                subtitle: server.endpoint.baseUrl,
+              ),
+              const SizedBox(height: 12),
+              _TodoRow(
+                icon: Icons.playlist_add_check_circle_outlined,
+                title: 'Chosen product',
+                subtitle: selectedProduct == null
+                    ? 'Avval mahsulot tanlang'
+                    : '${selectedProduct.code} • ${selectedProduct.name}',
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: selectedProduct == null || batchRunning
+                          ? null
+                          : () {
+                              setState(() {
+                                _batchRequested = true;
+                              });
+                            },
+                      icon: const Icon(Icons.play_arrow_rounded),
+                      label: const Text('Batch Start'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: batchRunning
+                          ? () {
+                              setState(() {
+                                _batchRequested = false;
+                              });
+                            }
+                          : null,
+                      icon: const Icon(Icons.stop_rounded),
+                      label: const Text('Batch Stop'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DashboardScrollView extends StatelessWidget {
+  const _DashboardScrollView({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
+      children: [child],
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _ServerHeaderCard extends StatelessWidget {
+  const _ServerHeaderCard({
+    required this.connected,
+    required this.statusText,
+    required this.displayName,
+    required this.endpoint,
+    required this.role,
+    required this.serverRef,
+    required this.latencyMs,
+  });
+
+  final bool connected;
+  final String statusText;
+  final String displayName;
+  final String endpoint;
+  final String role;
+  final String serverRef;
+  final int latencyMs;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: connected
+                      ? scheme.secondaryContainer
+                      : scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  connected ? 'Connected' : 'Selected server',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: connected
+                        ? scheme.onSecondaryContainer
+                        : scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                statusText,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            displayName,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            endpoint,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Chip(label: Text(role.toUpperCase())),
+              Chip(label: Text(serverRef)),
+              if (latencyMs > 0) Chip(label: Text('$latencyMs ms')),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _LiveMetricCard extends StatelessWidget {
+  const _LiveMetricCard({
+    required this.title,
+    required this.value,
+    required this.caption,
+    required this.icon,
+  });
+
+  final String title;
+  final String value;
+  final String caption;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.28),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: scheme.primary, size: 20),
+          const SizedBox(height: 18),
+          Text(
+            title,
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: scheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+              height: 1.05,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            caption,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProductOptionTile extends StatelessWidget {
+  const _ProductOptionTile({
+    required this.product,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _ControlProduct product;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected
+              ? scheme.secondaryContainer
+              : scheme.surfaceContainerHighest.withValues(alpha: 0.22),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? scheme.secondary : scheme.outlineVariant,
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.code,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: selected
+                          ? scheme.onSecondaryContainer
+                          : scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    product.name,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: selected
+                          ? scheme.onSecondaryContainer
+                          : scheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              selected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_off_rounded,
+              color: selected ? scheme.onSecondaryContainer : scheme.primary,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1212,6 +1730,20 @@ class MonitorSnapshot {
   final String monitorLabel;
   final String printerLabel;
 }
+
+class _ControlProduct {
+  const _ControlProduct({required this.code, required this.name});
+
+  final String code;
+  final String name;
+}
+
+const List<_ControlProduct> _controlProducts = [
+  _ControlProduct(code: 'ITEM-001', name: 'Green Tea'),
+  _ControlProduct(code: 'ITEM-002', name: 'Black Sesame'),
+  _ControlProduct(code: 'ITEM-003', name: 'Cotton Roll'),
+  _ControlProduct(code: 'ITEM-004', name: 'Poly Bag'),
+];
 
 class DiscoveryResult {
   const DiscoveryResult({required this.servers, required this.candidateCount});
