@@ -784,8 +784,8 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         duration: const Duration(milliseconds: 220),
         child: _selectedSection == 0
             ? _DashboardScrollView(
-                key: const ValueKey('server-section'),
-                child: _buildServerSection(context, theme, scheme, server),
+                key: const ValueKey('control-section'),
+                child: _buildControlSection(context, theme, scheme, server),
               )
             : _selectedSection == 1
             ? _DashboardScrollView(
@@ -793,8 +793,8 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
                 child: _buildLineSection(context, theme, scheme, server),
               )
             : _DashboardScrollView(
-                key: const ValueKey('control-section'),
-                child: _buildControlSection(context, theme, scheme, server),
+                key: const ValueKey('server-section'),
+                child: _buildServerSection(context, theme, scheme, server),
               ),
       ),
       bottomNavigationBar: NavigationBar(
@@ -806,9 +806,9 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         },
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.health_and_safety_outlined),
-            selectedIcon: Icon(Icons.health_and_safety),
-            label: 'Server',
+            icon: Icon(Icons.tune_outlined),
+            selectedIcon: Icon(Icons.tune),
+            label: 'Control',
           ),
           NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
@@ -816,9 +816,9 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
             label: 'Line',
           ),
           NavigationDestination(
-            icon: Icon(Icons.tune_outlined),
-            selectedIcon: Icon(Icons.tune),
-            label: 'Control',
+            icon: Icon(Icons.health_and_safety_outlined),
+            selectedIcon: Icon(Icons.health_and_safety),
+            label: 'Server',
           ),
         ],
       ),

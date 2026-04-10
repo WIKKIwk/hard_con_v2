@@ -11,6 +11,7 @@ ANDROID_FLUTTER_MODE ?= --profile
 ANDROID_REVERSE_PORTS ?= 8081 18000
 RUN_DEV_PLATFORM ?= auto
 RUN_DEVICE_ARG := $(if $(strip $(FLUTTER_DEVICE)),-d $(FLUTTER_DEVICE),)
+IOS_SIMULATOR_NAME ?= iPhone 17 Pro
 
 .PHONY: help pub-get devices emulators run run-auto run-linux run-android run-ios run-web analyze test build-linux clean
 
@@ -35,6 +36,7 @@ help:
 	@echo "  make run FLUTTER_DEVICE=web-server"
 	@echo "  make run FLUTTER_DEVICE=linux"
 	@echo "  make run-android ANDROID_EMULATOR_ID=gscale_api35"
+	@echo "  make run-ios IOS_SIMULATOR_NAME='iPhone 17 Pro'"
 	@echo "  make run FLUTTER_RUN_ARGS='--dart-define=API_BASE_URL=http://127.0.0.1:8081'"
 	@echo ""
 	@echo "Eslatma:"
@@ -123,7 +125,25 @@ run-android:
 	$(FLUTTER) run $(ANDROID_FLUTTER_MODE) -d "$$SERIAL" $(FLUTTER_RUN_ARGS)
 
 run-ios:
-	$(MAKE) run FLUTTER_DEVICE=ios FLUTTER_RUN_ARGS="$(FLUTTER_RUN_ARGS)"
+	@set -e; \
+	$(FLUTTER) pub get; \
+	BOOTED_UDID="$$(xcrun simctl list devices booted available | awk -F'[()]' '/^[[:space:]]+iPhone / {print $$2; exit}')"; \
+	if [ -n "$$BOOTED_UDID" ]; then \
+		TARGET_UDID="$$BOOTED_UDID"; \
+	else \
+		TARGET_UDID="$$(xcrun simctl list devices available | awk -F'[()]' '/^[[:space:]]+$(IOS_SIMULATOR_NAME) / {print $$2; exit}')"; \
+		if [ -z "$$TARGET_UDID" ]; then \
+			TARGET_UDID="$$(xcrun simctl list devices available | awk -F'[()]' '/^[[:space:]]+iPhone / {print $$2; exit}')"; \
+		fi; \
+		if [ -z "$$TARGET_UDID" ]; then \
+			echo "iOS simulator topilmadi."; \
+			exit 1; \
+		fi; \
+		xcrun simctl boot "$$TARGET_UDID" >/dev/null 2>&1 || true; \
+	fi; \
+	open -a Simulator >/dev/null 2>&1 || true; \
+	echo "Running on iOS simulator: $$TARGET_UDID"; \
+	$(FLUTTER) run -d "$$TARGET_UDID" $(FLUTTER_RUN_ARGS)
 
 run-web:
 	$(MAKE) run FLUTTER_DEVICE=$(FLUTTER_WEB_DEVICE) FLUTTER_RUN_ARGS="$(FLUTTER_RUN_ARGS)"
