@@ -333,29 +333,23 @@ class OperatorDashboardPage extends StatefulWidget {
 
 class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
   final http.Client _client = http.Client();
-  final TextEditingController _itemSearchController = TextEditingController();
   final TextEditingController _warehouseSearchController =
       TextEditingController();
-  final FocusNode _itemSearchFocusNode = FocusNode();
   final FocusNode _warehouseSearchFocusNode = FocusNode();
   StreamSubscription<String>? _streamSubscription;
   int _streamGeneration = 0;
   int _selectedSection = 0;
-  Timer? _itemSearchDebounce;
   Timer? _warehouseSearchDebounce;
 
   bool _manualLoading = false;
   bool _requestInFlight = false;
-  bool _itemsLoading = false;
   bool _warehousesLoading = false;
   bool _batchActionLoading = false;
   bool _connected = false;
   String _statusText = 'idle';
   String _errorText = '';
-  String _itemsError = '';
   String _warehousesError = '';
   MonitorSnapshot _snapshot = MonitorSnapshot.empty();
-  List<MobileItem> _items = const [];
   List<MobileWarehouse> _warehouses = const [];
   MobileItem? _selectedItem;
   MobileWarehouse? _selectedWarehouse;
@@ -364,9 +358,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
   @override
   void initState() {
     super.initState();
-    _itemSearchController.addListener(_scheduleItemSearch);
     _warehouseSearchController.addListener(_scheduleWarehouseSearch);
-    _itemSearchFocusNode.addListener(_handleSearchFocusChanged);
     _warehouseSearchFocusNode.addListener(_handleSearchFocusChanged);
     _snapshot = MonitorSnapshot.empty().copyWithLatency(
       widget.server.latencyMs,
@@ -377,12 +369,9 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
 
   @override
   void dispose() {
-    _itemSearchDebounce?.cancel();
     _warehouseSearchDebounce?.cancel();
     _pingTimer?.cancel();
-    _itemSearchController.dispose();
     _warehouseSearchController.dispose();
-    _itemSearchFocusNode.dispose();
     _warehouseSearchFocusNode.dispose();
     _stopLiveStream();
     _client.close();
@@ -634,22 +623,6 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     ).replace(queryParameters: filtered.isEmpty ? null : filtered);
   }
 
-  void _scheduleItemSearch() {
-    _itemSearchDebounce?.cancel();
-    final query = _itemSearchController.text.trim();
-    if (query.isEmpty) {
-      setState(() {
-        _items = const [];
-        _itemsLoading = false;
-        _itemsError = '';
-      });
-      return;
-    }
-    _itemSearchDebounce = Timer(const Duration(milliseconds: 220), () {
-      unawaited(_loadItems(query: query));
-    });
-  }
-
   void _scheduleWarehouseSearch() {
     if (_selectedItem == null) {
       return;
@@ -674,48 +647,41 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     });
   }
 
-  Future<void> _loadItems({String query = ''}) async {
-    if (!mounted) {
-      return;
+  Future<List<MobileItem>> _fetchItems({String query = ''}) async {
+    final response = await _client
+        .get(_apiUri('/v1/mobile/items', {'query': query, 'limit': '12'}))
+        .timeout(const Duration(seconds: 3));
+    if (response.statusCode < 200 || response.statusCode > 299) {
+      throw Exception('items ${response.statusCode}');
     }
-    setState(() {
-      _itemsLoading = true;
-      _itemsError = '';
-    });
-    try {
-      final response = await _client
-          .get(_apiUri('/v1/mobile/items', {'query': query, 'limit': '12'}))
-          .timeout(const Duration(seconds: 3));
-      if (response.statusCode < 200 || response.statusCode > 299) {
-        throw Exception('items ${response.statusCode}');
-      }
-      final payload = jsonDecode(response.body) as Map<String, dynamic>;
-      final rawItems =
-          (payload['items'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-      final items = rawItems.map(MobileItem.fromJson).toList(growable: false);
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _items = items;
-        _itemsLoading = false;
-        if (_selectedItem != null &&
-            items.every((item) => item.itemCode != _selectedItem!.itemCode) &&
-            !_snapshot.batchActive) {
-          _selectedItem = null;
-          _selectedWarehouse = null;
-          _warehouses = const [];
-        }
-      });
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _itemsLoading = false;
-        _itemsError = error.toString();
-      });
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final rawItems =
+        (payload['items'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+    return rawItems.map(MobileItem.fromJson).toList(growable: false);
+  }
+
+  Future<List<MobileWarehouse>> _fetchWarehouses({
+    required String itemCode,
+    String query = '',
+  }) async {
+    final response = await _client
+        .get(
+          _apiUri(
+            '/v1/mobile/items/${Uri.encodeComponent(itemCode)}/warehouses',
+            {'query': query, 'limit': '12'},
+          ),
+        )
+        .timeout(const Duration(seconds: 3));
+    if (response.statusCode < 200 || response.statusCode > 299) {
+      throw Exception('warehouses ${response.statusCode}');
     }
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final rawWarehouses =
+        (payload['warehouses'] as List?)?.cast<Map<String, dynamic>>() ??
+        const [];
+    return rawWarehouses
+        .map(MobileWarehouse.fromJson)
+        .toList(growable: false);
   }
 
   Future<void> _loadWarehouses({
@@ -780,10 +746,56 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
       _selectedWarehouse = null;
       _warehouses = const [];
       _warehouseSearchController.clear();
-      _itemSearchController.clear();
     });
-    _itemSearchFocusNode.unfocus();
     await _loadWarehouses(itemCode: item.itemCode);
+  }
+
+  Future<void> _openItemPicker() async {
+    final item = await showModalBottomSheet<MobileItem>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (context) => _ItemPickerSheet(
+        initialItem: _selectedItem,
+        fetchItems: ({required String query}) => _fetchItems(query: query),
+      ),
+    );
+    if (item == null) {
+      return;
+    }
+    await _selectItem(item);
+  }
+
+  Future<void> _openWarehousePicker() async {
+    final selectedItem = _selectedItem;
+    if (selectedItem == null) {
+      return;
+    }
+    final warehouse = await showModalBottomSheet<MobileWarehouse>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (context) => _WarehousePickerSheet(
+        initialWarehouse: _selectedWarehouse,
+        itemCode: selectedItem.itemCode,
+        fetchWarehouses: ({required String itemCode, required String query}) =>
+            _fetchWarehouses(itemCode: itemCode, query: query),
+      ),
+    );
+    if (warehouse == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _selectedWarehouse = warehouse;
+    });
   }
 
   Future<void> _startBatch() async {
@@ -882,6 +894,30 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
           tooltip: 'Change server',
         ),
         title: Text(server.handshake.serverName),
+        actions: _selectedSection == 0
+            ? [
+                Padding(
+                  padding: const EdgeInsets.only(right: 18),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.speed_outlined,
+                        size: 18,
+                        color: scheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _snapshot.latencyMs > 0 ? '${_snapshot.latencyMs} ms' : '—',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ]
+            : null,
       ),
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 220),
@@ -889,11 +925,6 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
             ? _DashboardScrollView(
                 key: const ValueKey('control-section'),
                 child: _buildControlSection(context, theme, scheme, server),
-              )
-            : _selectedSection == 1
-            ? _DashboardScrollView(
-                key: const ValueKey('line-section'),
-                child: _buildLineSection(context, theme, scheme, server),
               )
             : _DashboardScrollView(
                 key: const ValueKey('server-section'),
@@ -912,11 +943,6 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
             icon: Icon(Icons.tune_outlined),
             selectedIcon: Icon(Icons.tune),
             label: 'Control',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: 'Line',
           ),
           NavigationDestination(
             icon: Icon(Icons.health_and_safety_outlined),
@@ -1037,81 +1063,6 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     );
   }
 
-  Widget _buildLineSection(
-    BuildContext context,
-    ThemeData theme,
-    ColorScheme scheme,
-    DiscoveredServer server,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Line overview',
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.4,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _connected
-                        ? 'Tanlangan serverdan live line holati olindi.'
-                        : 'Line holati hozir offline.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Chip(
-              avatar: Icon(
-                _connected
-                    ? Icons.radio_button_checked_rounded
-                    : Icons.radio_button_off_rounded,
-                size: 18,
-              ),
-              label: Text(_connected ? 'LIVE' : 'OFFLINE'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        _StatusGrid(snapshot: _snapshot),
-        const SizedBox(height: 26),
-        _SectionLabel(title: 'Line details', subtitle: ''),
-        const SizedBox(height: 12),
-        _MiniIconRow(
-          icon: Icons.scale_outlined,
-          text: _connected
-              ? _snapshot.monitorLabel
-              : 'Scale, Zebra, batch va print request holati',
-        ),
-        const SizedBox(height: 16),
-        Divider(color: scheme.outlineVariant.withValues(alpha: 0.8)),
-        const SizedBox(height: 16),
-        _MiniIconRow(
-          icon: Icons.print_outlined,
-          text: _connected
-              ? _snapshot.printerLabel
-              : 'Printer trace va action holati',
-        ),
-        const SizedBox(height: 16),
-        Divider(color: scheme.outlineVariant.withValues(alpha: 0.8)),
-        const SizedBox(height: 16),
-        _MiniIconRow(icon: Icons.link_outlined, text: server.endpoint.baseUrl),
-      ],
-    );
-  }
-
   Widget _buildControlSection(
     BuildContext context,
     ThemeData theme,
@@ -1121,48 +1072,9 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     final selectedProduct = _selectedItem;
     final selectedWarehouse = _selectedWarehouse;
     final batchRunning = _snapshot.batchActive;
-    final showItemSuggestions =
-        _itemSearchFocusNode.hasFocus &&
-        (_itemsLoading || _itemsError.isNotEmpty || _items.isNotEmpty);
-    final showWarehouseSuggestions =
-        selectedProduct != null &&
-        _warehouseSearchFocusNode.hasFocus &&
-        (_warehousesLoading ||
-            _warehousesError.isNotEmpty ||
-            _warehouses.isNotEmpty);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Control panel',
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.4,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Chip(
-              avatar: Icon(
-                batchRunning
-                    ? Icons.play_circle_outline_rounded
-                    : Icons.pause_circle_outline_rounded,
-                size: 18,
-              ),
-              label: Text(batchRunning ? 'BATCH ON' : 'BATCH OFF'),
-            ),
-          ],
-        ),
         const SizedBox(height: 20),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1186,11 +1098,6 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        _MiniIconRow(
-          icon: Icons.speed_outlined,
-          text: _snapshot.latencyMs > 0 ? '${_snapshot.latencyMs} ms' : '—',
-        ),
         if (_snapshot.batchActive) ...[
           const SizedBox(height: 12),
           _MiniIconRow(
@@ -1202,64 +1109,16 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         const SizedBox(height: 28),
         _SectionLabel(title: 'Item selection', subtitle: ''),
         const SizedBox(height: 8),
-        TextField(
-          controller: _itemSearchController,
-          focusNode: _itemSearchFocusNode,
-          decoration: const InputDecoration(
-            labelText: 'Item qidirish',
-            hintText: 'Masalan: tea, cotton, bag',
-            prefixIcon: Icon(Icons.search_rounded),
-          ),
+        _PickerField(
+          icon: Icons.search_rounded,
+          label: 'Mahsulot tanlang',
+          value: selectedProduct?.itemCode,
+          subtitle: selectedProduct?.itemName,
+          onTap: batchRunning ? null : _openItemPicker,
         ),
-        if (showItemSuggestions) ...[
-          const SizedBox(height: 10),
-          if (_itemsLoading)
-            const LinearProgressIndicator(minHeight: 2)
-          else if (_itemsError.isNotEmpty)
-            Text(
-              _itemsError,
-              style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
-            )
-          else if (_items.isEmpty)
-            Text(
-              'Item topilmadi.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-            )
-          else
-            Column(
-              children: [
-                for (var i = 0; i < _items.length; i++) ...[
-                  _ItemOptionTile(
-                    item: _items[i],
-                    selected: selectedProduct?.itemCode == _items[i].itemCode,
-                    onTap: batchRunning ? null : () => _selectItem(_items[i]),
-                  ),
-                  if (i != _items.length - 1)
-                    Divider(
-                      height: 1,
-                      indent: 38,
-                      endIndent: 0,
-                      color: scheme.outlineVariant.withValues(alpha: 0.8),
-                    ),
-                ],
-              ],
-            ),
-        ],
         const SizedBox(height: 28),
         _SectionLabel(title: 'Warehouse selection', subtitle: ''),
         const SizedBox(height: 8),
-        TextField(
-          controller: _warehouseSearchController,
-          focusNode: _warehouseSearchFocusNode,
-          enabled: selectedProduct != null && !batchRunning,
-          decoration: const InputDecoration(
-            labelText: 'Warehouse qidirish',
-            hintText: 'Masalan: stores, raw, main',
-            prefixIcon: Icon(Icons.warehouse_outlined),
-          ),
-        ),
         if (selectedProduct == null) ...[
           const SizedBox(height: 10),
           Text(
@@ -1268,50 +1127,21 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
               color: scheme.onSurfaceVariant,
             ),
           ),
-        ] else if (showWarehouseSuggestions) ...[
-          const SizedBox(height: 10),
-          if (_warehousesLoading)
-            const LinearProgressIndicator(minHeight: 2)
-          else if (_warehousesError.isNotEmpty)
+        ] else ...[
+          _PickerField(
+            icon: Icons.warehouse_outlined,
+            label: 'Warehouse tanlang',
+            value: selectedWarehouse?.warehouse,
+            subtitle: selectedWarehouse?.caption,
+            onTap: batchRunning ? null : _openWarehousePicker,
+          ),
+          if (_warehousesError.isNotEmpty) ...[
+            const SizedBox(height: 10),
             Text(
               _warehousesError,
               style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
-            )
-          else if (_warehouses.isEmpty)
-            Text(
-              'Warehouse topilmadi.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-            )
-          else
-            Column(
-              children: [
-                for (var i = 0; i < _warehouses.length; i++) ...[
-                  _WarehouseOptionTile(
-                    warehouse: _warehouses[i],
-                    selected:
-                        selectedWarehouse?.warehouse == _warehouses[i].warehouse,
-                    onTap: batchRunning
-                        ? null
-                        : () {
-                            setState(() {
-                              _selectedWarehouse = _warehouses[i];
-                              _warehouseSearchController.clear();
-                            });
-                            _warehouseSearchFocusNode.unfocus();
-                          },
-                  ),
-                  if (i != _warehouses.length - 1)
-                    Divider(
-                      height: 1,
-                      indent: 38,
-                      endIndent: 0,
-                      color: scheme.outlineVariant.withValues(alpha: 0.8),
-                    ),
-                ],
-              ],
             ),
+          ],
         ],
         const SizedBox(height: 28),
         _SectionLabel(title: 'Batch actions', subtitle: ''),
@@ -1319,7 +1149,27 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         Row(
           children: [
             Expanded(
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: batchRunning && !_batchActionLoading
+                    ? _stopBatch
+                    : null,
+                icon: const Icon(Icons.stop_rounded),
+                label: Text(_batchActionLoading ? 'Stopping...' : 'Batch Stop'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
               child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
                 onPressed:
                     selectedProduct == null ||
                         selectedWarehouse == null ||
@@ -1331,16 +1181,6 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
                 label: Text(
                   _batchActionLoading ? 'Starting...' : 'Batch Start',
                 ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: batchRunning && !_batchActionLoading
-                    ? _stopBatch
-                    : null,
-                icon: const Icon(Icons.stop_rounded),
-                label: Text(_batchActionLoading ? 'Stopping...' : 'Batch Stop'),
               ),
             ),
           ],
@@ -1401,6 +1241,62 @@ class _SectionLabel extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _PickerField extends StatelessWidget {
+  const _PickerField({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.value,
+    this.subtitle,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? value;
+  final String? subtitle;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final hasValue = (value ?? '').trim().isNotEmpty;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          prefixIcon: Icon(icon),
+          suffixIcon: const Icon(Icons.expand_more_rounded),
+          labelText: label,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              hasValue ? value!.trim() : 'Tanlash uchun bosing',
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: hasValue ? scheme.onSurface : scheme.onSurfaceVariant,
+                fontWeight: hasValue ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+            if ((subtitle ?? '').trim().isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                subtitle!.trim(),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1684,11 +1580,6 @@ class _ItemOptionTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.inventory_2_outlined,
-              color: selected ? scheme.primary : scheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1745,11 +1636,6 @@ class _WarehouseOptionTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.warehouse_outlined,
-              color: selected ? scheme.primary : scheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1778,6 +1664,388 @@ class _WarehouseOptionTile extends StatelessWidget {
                 color: scheme.primary,
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ItemPickerSheet extends StatefulWidget {
+  const _ItemPickerSheet({
+    required this.fetchItems,
+    this.initialItem,
+  });
+
+  final Future<List<MobileItem>> Function({required String query}) fetchItems;
+  final MobileItem? initialItem;
+
+  @override
+  State<_ItemPickerSheet> createState() => _ItemPickerSheetState();
+}
+
+class _ItemPickerSheetState extends State<_ItemPickerSheet> {
+  late final TextEditingController _controller;
+  Timer? _debounce;
+  bool _loading = false;
+  String _error = '';
+  List<MobileItem> _items = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+    unawaited(_loadItems());
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _scheduleSearch() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 220), () {
+      unawaited(_loadItems());
+    });
+  }
+
+  Future<void> _loadItems() async {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = '';
+    });
+    try {
+      final items = await widget.fetchItems(query: _controller.text.trim());
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _items = items;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _items = const [];
+        _loading = false;
+        _error = error.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: FractionallySizedBox(
+        heightFactor: 0.82,
+        child: Material(
+          color: theme.scaffoldBackgroundColor,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Mahsulot tanlang',
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _controller,
+                    autofocus: true,
+                    onChanged: (_) => _scheduleSearch(),
+                    decoration: const InputDecoration(
+                      hintText: 'Mahsulot qidiring',
+                      prefixIcon: Icon(Icons.search_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        color: scheme.surfaceContainerLow,
+                        child: _loading
+                            ? const Center(
+                                child: CircularProgressIndicator(),
+                              )
+                            : _error.isNotEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Text(
+                                    _error,
+                                    textAlign: TextAlign.center,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: scheme.error,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : _items.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'Mahsulot topilmadi.',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 18,
+                                  vertical: 12,
+                                ),
+                                itemCount: _items.length,
+                                separatorBuilder: (context, index) => Divider(
+                                  height: 1,
+                                  color: scheme.outlineVariant.withValues(
+                                    alpha: 0.7,
+                                  ),
+                                ),
+                                itemBuilder: (context, index) {
+                                  final item = _items[index];
+                                  final selected =
+                                      widget.initialItem?.itemCode ==
+                                      item.itemCode;
+                                  return _ItemOptionTile(
+                                    item: item,
+                                    selected: selected,
+                                    onTap: () {
+                                      Navigator.of(context).pop(item);
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WarehousePickerSheet extends StatefulWidget {
+  const _WarehousePickerSheet({
+    required this.itemCode,
+    required this.fetchWarehouses,
+    this.initialWarehouse,
+  });
+
+  final String itemCode;
+  final Future<List<MobileWarehouse>> Function({
+    required String itemCode,
+    required String query,
+  }) fetchWarehouses;
+  final MobileWarehouse? initialWarehouse;
+
+  @override
+  State<_WarehousePickerSheet> createState() => _WarehousePickerSheetState();
+}
+
+class _WarehousePickerSheetState extends State<_WarehousePickerSheet> {
+  late final TextEditingController _controller;
+  Timer? _debounce;
+  bool _loading = false;
+  String _error = '';
+  List<MobileWarehouse> _warehouses = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+    unawaited(_loadWarehouses());
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _scheduleSearch() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 220), () {
+      unawaited(_loadWarehouses());
+    });
+  }
+
+  Future<void> _loadWarehouses() async {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = '';
+    });
+    try {
+      final warehouses = await widget.fetchWarehouses(
+        itemCode: widget.itemCode,
+        query: _controller.text.trim(),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _warehouses = warehouses;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _warehouses = const [];
+        _loading = false;
+        _error = error.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: FractionallySizedBox(
+        heightFactor: 0.82,
+        child: Material(
+          color: theme.scaffoldBackgroundColor,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Warehouse tanlang',
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _controller,
+                    autofocus: true,
+                    onChanged: (_) => _scheduleSearch(),
+                    decoration: const InputDecoration(
+                      hintText: 'Warehouse qidiring',
+                      prefixIcon: Icon(Icons.search_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        color: scheme.surfaceContainerLow,
+                        child: _loading
+                            ? const Center(
+                                child: CircularProgressIndicator(),
+                              )
+                            : _error.isNotEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Text(
+                                    _error,
+                                    textAlign: TextAlign.center,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: scheme.error,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : _warehouses.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'Warehouse topilmadi.',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 18,
+                                  vertical: 12,
+                                ),
+                                itemCount: _warehouses.length,
+                                separatorBuilder: (context, index) => Divider(
+                                  height: 1,
+                                  color: scheme.outlineVariant.withValues(
+                                    alpha: 0.7,
+                                  ),
+                                ),
+                                itemBuilder: (context, index) {
+                                  final warehouse = _warehouses[index];
+                                  final selected =
+                                      widget.initialWarehouse?.warehouse ==
+                                      warehouse.warehouse;
+                                  return _WarehouseOptionTile(
+                                    warehouse: warehouse,
+                                    selected: selected,
+                                    onTap: () {
+                                      Navigator.of(context).pop(warehouse);
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
