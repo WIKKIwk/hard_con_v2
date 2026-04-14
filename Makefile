@@ -8,7 +8,7 @@ ANDROID_EMULATOR_ID ?= gscale_atd35
 ANDROID_SDK_ROOT ?= $(HOME)/Android/Sdk
 ANDROID_EMULATOR_GPU ?= host
 ANDROID_FLUTTER_MODE ?= --profile
-ANDROID_REVERSE_PORTS ?= 8081 18000
+ANDROID_REVERSE_PORTS ?= 39117 41257 43391 45533 47681 18000
 RUN_DEV_PLATFORM ?= auto
 RUN_DEVICE_ARG := $(if $(strip $(FLUTTER_DEVICE)),-d $(FLUTTER_DEVICE),)
 IOS_SIMULATOR_NAME ?= iPhone 17 Pro
@@ -37,7 +37,7 @@ help:
 	@echo "  make run FLUTTER_DEVICE=linux"
 	@echo "  make run-android ANDROID_EMULATOR_ID=gscale_api35"
 	@echo "  make run-ios IOS_SIMULATOR_NAME='iPhone 17 Pro'"
-	@echo "  make run FLUTTER_RUN_ARGS='--dart-define=API_BASE_URL=http://127.0.0.1:8081'"
+	@echo "  make run FLUTTER_RUN_ARGS='--dart-define=API_BASE_URL=http://127.0.0.1:39117'"
 	@echo ""
 	@echo "Eslatma:"
 	@echo "  iOS build/run odatda faqat macOS'da ishlaydi."

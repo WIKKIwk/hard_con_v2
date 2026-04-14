@@ -12,18 +12,19 @@ import 'network_candidates_stub.dart'
     if (dart.library.io) 'network_candidates_io.dart'
     as network_candidates;
 
-const _defaultApiPort = 8081;
+// Keep in sync with gscale-zebra mobileapi approved ports.
+const _defaultApiPort = 39117;
 const _discoveryPort = 18081;
 const _fastProbeTimeout = Duration(milliseconds: 180);
 const _manualProbeTimeout = Duration(seconds: 2);
 const _udpDiscoveryTimeout = Duration(milliseconds: 450);
 const _fallbackProbeTimeout = Duration(milliseconds: 240);
 const _fallbackProbeConcurrency = 24;
-const _directProbePorts = <int>[8081, 8082, 8083];
+const _directProbePorts = <int>[39117, 41257, 43391, 45533, 47681];
 const _enableAutomaticSubnetSweep = false;
 const _lastServerKey = 'last_server_base_url';
 const _cachedServersKey = 'cached_servers_v1';
-const _defaultWifiServerAddress = 'http://gscale.local:8081';
+const _defaultWifiServerAddress = 'http://gscale.local:39117';
 const _bonjourDiscoveryTimeout = Duration(milliseconds: 350);
 const _bonjourDiscoveryChannel = MethodChannel('gscale/bonjour');
 const _configuredApiBaseUrl = String.fromEnvironment(
@@ -2635,7 +2636,7 @@ class _ManualServerSheetState extends State<ManualServerSheet> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Example: 192.168.1.12:8081',
+            'Example: 192.168.1.12:39117',
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
@@ -2646,7 +2647,7 @@ class _ManualServerSheetState extends State<ManualServerSheet> {
             keyboardType: TextInputType.url,
             decoration: const InputDecoration(
               labelText: 'Server address',
-              hintText: 'http://192.168.1.12:8081',
+              hintText: 'http://192.168.1.12:39117',
               border: OutlineInputBorder(),
             ),
             onSubmitted: (_) => _submit(),

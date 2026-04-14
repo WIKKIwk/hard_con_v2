@@ -26,6 +26,7 @@ const _discoveryProbeV1 = 'GSCALE_DISCOVER_V1';
 const _discoveryProbeAttempts = 3;
 const _discoveryProbeRetryDelay = Duration(milliseconds: 120);
 const _discoverySettleDelay = Duration(milliseconds: 45);
+const _fallbackMobileApiPort = 39117;
 
 Future<List<String>> collectCandidateHosts() async {
   return const ['gscale.local'];
@@ -123,7 +124,7 @@ Future<List<DiscoveryAnnouncement>> discoverAnnouncements({
     final host = datagram.address.address.trim();
     final announcement = DiscoveryAnnouncement(
       host: host,
-      httpPort: _asInt(payload['http_port']) ?? 8081,
+      httpPort: _asInt(payload['http_port']) ?? _fallbackMobileApiPort,
       serverName: payload['server_name']?.toString().trim() ?? host,
       serverRef: payload['server_ref']?.toString().trim() ?? '',
       displayName: payload['display_name']?.toString().trim() ?? 'Operator',
