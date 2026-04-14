@@ -82,40 +82,6 @@ class GScaleMobileApp extends StatefulWidget {
 class _GScaleMobileAppState extends State<GScaleMobileApp> {
   DiscoveredServer? _selectedServer;
 
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_bootstrapSelectedServer());
-  }
-
-  Future<void> _bootstrapSelectedServer() async {
-    final preferredEndpoint = await loadLastUsedServer();
-    final configuredEndpoint = parseServerEndpoint(_configuredApiBaseUrl);
-    final endpoint =
-        (preferredEndpoint != null &&
-            !_shouldSkipDiscoveryHost(preferredEndpoint.host))
-        ? preferredEndpoint
-        : ((configuredEndpoint != null &&
-                  !_shouldSkipDiscoveryHost(configuredEndpoint.host))
-              ? configuredEndpoint
-              : null);
-    if (endpoint == null || !mounted) {
-      return;
-    }
-    setState(() {
-      _selectedServer = DiscoveredServer(
-        endpoint: endpoint,
-        handshake: ServerHandshake(
-          serverName: endpoint.host,
-          displayName: 'Direct server',
-          role: 'operator',
-          serverRef: 'bootstrap',
-        ),
-        latencyMs: 1,
-      );
-    });
-  }
-
   Future<void> _openServer(DiscoveredServer server) async {
     await saveLastUsedServer(server.endpoint);
     await saveCachedDiscoveredServers([server]);
@@ -259,11 +225,6 @@ class _ServerPickerPageState extends State<ServerPickerPage> {
   @override
   void initState() {
     super.initState();
-    final seeded = buildSeededDiscoveryResult();
-    if (seeded.servers.isNotEmpty) {
-      _result = seeded;
-    }
-    unawaited(_loadCachedServers());
     unawaited(_scan());
     _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       unawaited(_scan());
@@ -277,16 +238,6 @@ class _ServerPickerPageState extends State<ServerPickerPage> {
     super.dispose();
   }
 
-  Future<void> _loadCachedServers() async {
-    final cached = await loadCachedDiscoveredServers();
-    if (!mounted || cached.isEmpty) {
-      return;
-    }
-    setState(() {
-      _result = DiscoveryResult(servers: cached, candidateCount: cached.length);
-    });
-  }
-
   Future<void> _scan() async {
     if (_scanning) {
       return;
@@ -298,17 +249,6 @@ class _ServerPickerPageState extends State<ServerPickerPage> {
 
     try {
       final preferredEndpoint = await loadLastUsedServer();
-      final seededResult = buildSeededDiscoveryResult(
-        preferredEndpoint: preferredEndpoint,
-      );
-      if (seededResult.servers.isNotEmpty &&
-          mounted &&
-          (_result == null || _result!.servers.isEmpty)) {
-        setState(() {
-          _result = seededResult;
-        });
-      }
-
       final fastResultFuture = discoverServersFast(
         _client,
         preferredEndpoint: preferredEndpoint,
@@ -318,21 +258,22 @@ class _ServerPickerPageState extends State<ServerPickerPage> {
         return;
       }
       setState(() {
-        if (fastResult.servers.isNotEmpty) {
-          _result = fastResult;
-        }
+        _result = fastResult;
         _scanning = false;
       });
       if (fastResult.servers.isNotEmpty) {
         unawaited(saveCachedDiscoveredServers(fastResult.servers));
+      } else {
+        unawaited(clearCachedDiscoveredServers());
       }
       unawaited(_finishBackgroundScan(preferredEndpoint));
     } catch (_) {
       if (!mounted) {
         return;
       }
+      unawaited(clearCachedDiscoveredServers());
       setState(() {
-        _result ??= const DiscoveryResult(
+        _result = const DiscoveryResult(
           servers: <DiscoveredServer>[],
           candidateCount: 0,
         );
@@ -350,11 +291,13 @@ class _ServerPickerPageState extends State<ServerPickerPage> {
       if (!mounted) {
         return;
       }
+      setState(() {
+        _result = result;
+      });
       if (result.servers.isNotEmpty) {
-        setState(() {
-          _result = result;
-        });
         await saveCachedDiscoveredServers(result.servers);
+      } else {
+        await clearCachedDiscoveredServers();
       }
     } catch (_) {}
   }
@@ -3738,6 +3681,11 @@ Future<void> saveCachedDiscoveredServers(List<DiscoveredServer> servers) async {
       )
       .toList(growable: false);
   await prefs.setString(_cachedServersKey, jsonEncode(payload));
+}
+
+Future<void> clearCachedDiscoveredServers() async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove(_cachedServersKey);
 }
 
 Future<List<DiscoveredServer>> loadCachedDiscoveredServers() async {
