@@ -2474,11 +2474,8 @@ class _ServerList extends StatelessWidget {
 }
 
 IconData _wifiIconForLatency(int latencyMs) {
-  if (latencyMs <= 8) {
+  if (latencyMs <= 20) {
     return Icons.signal_wifi_4_bar_rounded;
-  }
-  if (latencyMs <= 25) {
-    return Icons.network_wifi_3_bar_rounded;
   }
   if (latencyMs <= 60) {
     return Icons.network_wifi_2_bar_rounded;

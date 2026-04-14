@@ -82,7 +82,6 @@ Future<List<DiscoveryAnnouncement>> discoverAnnouncements({
       InternetAddress.anyIPv4,
       port,
       reuseAddress: true,
-      reusePort: true,
     );
   } catch (_) {
     socket = await RawDatagramSocket.bind(
