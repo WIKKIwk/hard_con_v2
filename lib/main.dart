@@ -2844,6 +2844,7 @@ class MonitorSnapshot {
     final batchWarehouse = _text(batch['warehouse']);
 
     final printStatus = _text(printRequest['status'], fallback: 'idle');
+    final printerConnected = printer['ok'] == true;
     final printerMode = _text(
       printer['print_mode'],
       fallback: 'trace unavailable',
@@ -2882,6 +2883,7 @@ class MonitorSnapshot {
           : 'API: offline',
       monitorLabel: batchItem.isEmpty ? 'No active batch' : 'Batch: $batchItem',
       printerLabel: buildPrinterLabel(
+        printerConnected: printerConnected,
         printStatus: printStatus,
         printerMode: printerMode,
         activePrinterEPC: activePrinterEPC,
@@ -2988,6 +2990,7 @@ class MonitorSnapshot {
 }
 
 String buildPrinterLabel({
+  required bool printerConnected,
   required String printStatus,
   required String printerMode,
   required String activePrinterEPC,
@@ -2995,6 +2998,9 @@ String buildPrinterLabel({
   required String latestPrinterEPC,
   required String latestPrinterError,
 }) {
+  if (!printerConnected || printerMode.trim() == 'trace unavailable') {
+    return 'Printer: ulanmagan';
+  }
   final requestState = _text(printStatus, fallback: 'idle').toLowerCase();
   final historyState = _text(
     latestPrinterStatus,
@@ -3009,12 +3015,12 @@ String buildPrinterLabel({
     return epc.isEmpty ? 'Printer: printing' : 'Printer: printing • $epc';
   }
   if (historyState == 'done' || requestState == 'done') {
-    return 'Printer: kutyapti';
+    return 'Printer: ulangan';
   }
   if (historyState == 'error' || requestState == 'error') {
-    return 'Printer: kutyapti';
+    return 'Printer: ulangan';
   }
-  return 'Printer: kutyapti';
+  return 'Printer: ulangan';
 }
 
 String buildScaleConnectionLabel({
