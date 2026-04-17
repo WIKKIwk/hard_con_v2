@@ -367,6 +367,8 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
   final TextEditingController _erpUrlController = TextEditingController();
   final TextEditingController _erpApiKeyController = TextEditingController();
   final TextEditingController _erpApiSecretController = TextEditingController();
+  final TextEditingController _defaultWarehouseController =
+      TextEditingController();
   final TextEditingController _warehouseSearchController =
       TextEditingController();
   final FocusNode _warehouseSearchFocusNode = FocusNode();
@@ -380,17 +382,25 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
   bool _warehousesLoading = false;
   bool _batchActionLoading = false;
   bool _erpSetupLoading = false;
+  bool _warehouseSetupLoading = false;
+  bool _archiveLoading = false;
   bool _connected = false;
   bool _erpSetupExpanded = false;
+  bool _warehouseSetupExpanded = false;
   String _statusText = 'idle';
   String _errorText = '';
   String _warehousesError = '';
   String _erpSetupError = '';
+  String _warehouseSetupError = '';
+  String _archiveError = '';
   bool _erpWriteConfigured = false;
   bool _erpReadConfigured = false;
   String _erpConfiguredUrl = '';
+  String _warehouseMode = 'manual';
+  String _defaultWarehouse = '';
   MonitorSnapshot _snapshot = MonitorSnapshot.empty();
   List<MobileWarehouse> _warehouses = const [];
+  List<MobileArchiveSession> _archiveSessions = const [];
   MobileItem? _selectedItem;
   MobileWarehouse? _selectedWarehouse;
   Timer? _pingTimer;
@@ -407,6 +417,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     );
     _startLiveStream();
     _startPingLoop();
+    unawaited(_refreshSetupStatus());
   }
 
   @override
@@ -417,6 +428,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     _erpUrlController.dispose();
     _erpApiKeyController.dispose();
     _erpApiSecretController.dispose();
+    _defaultWarehouseController.dispose();
     _warehouseSearchController.dispose();
     _warehouseSearchFocusNode.dispose();
     _stopLiveStream();
@@ -655,6 +667,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
       if (!mounted) {
         return;
       }
+      final previousDefaultWarehouse = _defaultWarehouse;
       setState(() {
         final writeConfigured = payload['erp_write_configured'] == true;
         final readConfigured = payload['erp_read_configured'] == true;
@@ -664,10 +677,32 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         if (!writeConfigured && !readConfigured) {
           _erpSetupExpanded = true;
         }
+        final nextWarehouseMode = _text(
+          payload['warehouse_mode'],
+          fallback: 'manual',
+        );
+        _warehouseMode = nextWarehouseMode == 'default' ? 'default' : 'manual';
+        _defaultWarehouse = _text(payload['default_warehouse']);
+        if (_defaultWarehouseController.text.trim().isEmpty ||
+            _defaultWarehouseController.text.trim() ==
+                previousDefaultWarehouse) {
+          _defaultWarehouseController.text = _defaultWarehouse;
+        }
+        if (_warehouseMode == 'default' && _defaultWarehouse.trim().isEmpty) {
+          _warehouseSetupExpanded = true;
+        }
       });
     } catch (_) {
       return;
     }
+  }
+
+  String get _currentDefaultWarehouse {
+    final controllerValue = _defaultWarehouseController.text.trim();
+    if (controllerValue.isNotEmpty) {
+      return controllerValue;
+    }
+    return _defaultWarehouse.trim();
   }
 
   void _applySnapshot(MonitorSnapshot snapshot) {
@@ -795,6 +830,20 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     return rawWarehouses.map(MobileWarehouse.fromJson).toList(growable: false);
   }
 
+  Future<List<MobileWarehouse>> _fetchAllWarehouses({String query = ''}) async {
+    final response = await _client
+        .get(_apiUri('/v1/mobile/warehouses', {'query': query, 'limit': '30'}))
+        .timeout(const Duration(seconds: 3));
+    if (response.statusCode < 200 || response.statusCode > 299) {
+      throw Exception('warehouses ${response.statusCode}');
+    }
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final rawWarehouses =
+        (payload['warehouses'] as List?)?.cast<Map<String, dynamic>>() ??
+        const [];
+    return rawWarehouses.map(MobileWarehouse.fromJson).toList(growable: false);
+  }
+
   Future<void> _loadWarehouses({
     required String itemCode,
     String query = '',
@@ -851,6 +900,104 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     }
   }
 
+  Future<void> _openDefaultWarehousePicker() async {
+    final warehouse = await showModalBottomSheet<MobileWarehouse>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (context) => _WarehousePickerSheet(
+        title: 'Default ombor tanlang',
+        queryHint: 'Ombor qidiring',
+        emptyText: 'Ombor topilmadi.',
+        initialWarehouse: MobileWarehouse(warehouse: _currentDefaultWarehouse),
+        fetchWarehouses: ({required String query}) =>
+            _fetchAllWarehouses(query: query),
+      ),
+    );
+    if (warehouse == null || !mounted) {
+      return;
+    }
+    await _persistWarehouseSetup(
+      mode: 'default',
+      defaultWarehouse: warehouse.warehouse,
+    );
+  }
+
+  Future<void> _persistWarehouseSetup({
+    required String mode,
+    required String defaultWarehouse,
+  }) async {
+    if (_warehouseSetupLoading) {
+      return;
+    }
+    if (mode == 'default' && defaultWarehouse.trim().isEmpty) {
+      setState(() {
+        _warehouseSetupError = 'Default ombor tanlang';
+        _warehouseSetupExpanded = true;
+      });
+      return;
+    }
+
+    setState(() {
+      _warehouseSetupLoading = true;
+      _warehouseSetupError = '';
+    });
+
+    try {
+      final response = await _client
+          .post(
+            _apiUri('/v1/mobile/setup/warehouse'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'warehouse_mode': mode,
+              'default_warehouse': defaultWarehouse.trim(),
+            }),
+          )
+          .timeout(const Duration(seconds: 6));
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode < 200 || response.statusCode > 299) {
+        throw Exception(
+          _text(
+            payload['message'],
+            fallback: _text(
+              payload['error'],
+              fallback: 'Warehouse setup failed',
+            ),
+          ),
+        );
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _warehouseMode =
+            _text(payload['warehouse_mode'], fallback: 'manual') == 'default'
+            ? 'default'
+            : 'manual';
+        _defaultWarehouse = _text(payload['default_warehouse']);
+        _defaultWarehouseController.text = _defaultWarehouse;
+        _warehouseSetupExpanded = false;
+        _selectedWarehouse = null;
+        _warehouseSetupLoading = false;
+      });
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(content: Text('Warehouse setup saqlandi')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _warehouseSetupLoading = false;
+        _warehouseSetupError = error.toString();
+      });
+    }
+  }
+
   Future<void> _selectItem(MobileItem item) async {
     setState(() {
       _selectedItem = item;
@@ -895,10 +1042,12 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (context) => _WarehousePickerSheet(
+        title: 'Warehouse tanlang',
+        queryHint: 'Warehouse qidiring',
+        emptyText: 'Warehouse topilmadi.',
         initialWarehouse: _selectedWarehouse,
-        itemCode: selectedItem.itemCode,
-        fetchWarehouses: ({required String itemCode, required String query}) =>
-            _fetchWarehouses(itemCode: itemCode, query: query),
+        fetchWarehouses: ({required String query}) =>
+            _fetchWarehouses(itemCode: selectedItem.itemCode, query: query),
       ),
     );
     if (warehouse == null || !mounted) {
@@ -911,7 +1060,9 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
 
   Future<void> _startBatch() async {
     final item = _selectedItem;
-    final warehouse = _selectedWarehouse;
+    final warehouse = _warehouseMode == 'default'
+        ? _currentDefaultWarehouse
+        : _selectedWarehouse?.warehouse;
     if (item == null || warehouse == null || _batchActionLoading) {
       return;
     }
@@ -927,7 +1078,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
             body: jsonEncode({
               'item_code': item.itemCode,
               'item_name': item.itemName,
-              'warehouse': warehouse.warehouse,
+              'warehouse': warehouse,
             }),
           )
           .timeout(const Duration(seconds: 4));
@@ -944,6 +1095,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         _snapshot = _snapshot.copyWithBatch(MobileBatchState.fromJson(batch));
         _batchActionLoading = false;
       });
+      unawaited(_refreshArchive());
     } catch (error) {
       if (!mounted) {
         return;
@@ -973,6 +1125,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       final batch =
           (payload['batch'] as Map?)?.cast<String, dynamic>() ?? const {};
+      final message = _text(payload['message'], fallback: 'Batch to\'xtadi');
       if (!mounted) {
         return;
       }
@@ -980,6 +1133,10 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         _snapshot = _snapshot.copyWithBatch(MobileBatchState.fromJson(batch));
         _batchActionLoading = false;
       });
+      unawaited(_refreshArchive());
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(SnackBar(content: Text(message)));
     } catch (error) {
       if (!mounted) {
         return;
@@ -987,6 +1144,48 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
       setState(() {
         _batchActionLoading = false;
         _warehousesError = error.toString();
+      });
+    }
+  }
+
+  Future<void> _refreshArchive() async {
+    if (_archiveLoading || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _archiveLoading = true;
+      _archiveError = '';
+    });
+
+    try {
+      final response = await _client
+          .get(_apiUri('/v1/mobile/archive', {'limit': '50'}))
+          .timeout(const Duration(seconds: 4));
+      if (response.statusCode < 200 || response.statusCode > 299) {
+        throw Exception('archive ${response.statusCode}');
+      }
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      final rawSessions =
+          (payload['archive'] as List?)?.cast<Map<String, dynamic>>() ??
+          const [];
+      final sessions = rawSessions
+          .map(MobileArchiveSession.fromJson)
+          .toList(growable: false);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _archiveSessions = sessions;
+        _archiveLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _archiveLoading = false;
+        _archiveError = error.toString();
       });
     }
   }
@@ -1090,6 +1289,13 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     }
   }
 
+  Future<void> _submitWarehouseSetup() async {
+    await _persistWarehouseSetup(
+      mode: _warehouseMode == 'default' ? 'default' : 'manual',
+      defaultWarehouse: _defaultWarehouseController.text.trim(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1125,15 +1331,20 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
       ),
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 220),
-        child: _selectedSection == 0
-            ? _DashboardScrollView(
-                key: const ValueKey('control-section'),
-                child: _buildControlSection(context, theme, scheme, server),
-              )
-            : _DashboardScrollView(
-                key: const ValueKey('server-section'),
-                child: _buildServerSection(context, theme, scheme, server),
-              ),
+        child: switch (_selectedSection) {
+          0 => _DashboardScrollView(
+            key: const ValueKey('control-section'),
+            child: _buildControlSection(context, theme, scheme, server),
+          ),
+          1 => _DashboardScrollView(
+            key: const ValueKey('server-section'),
+            child: _buildServerSection(context, theme, scheme, server),
+          ),
+          _ => _DashboardScrollView(
+            key: const ValueKey('archive-section'),
+            child: _buildArchiveSection(context, theme, scheme, server),
+          ),
+        },
       ),
       bottomNavigationBar: NavigationBar(
         height: 64,
@@ -1142,6 +1353,9 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
           setState(() {
             _selectedSection = index;
           });
+          if (index == 2) {
+            unawaited(_refreshArchive());
+          }
         },
         destinations: const [
           NavigationDestination(
@@ -1153,6 +1367,11 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
             icon: Icon(Icons.health_and_safety_outlined),
             selectedIcon: Icon(Icons.health_and_safety),
             label: 'Server',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.archive_outlined),
+            selectedIcon: Icon(Icons.archive),
+            label: 'Archive',
           ),
         ],
       ),
@@ -1169,6 +1388,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         _erpWriteConfigured ||
         _erpReadConfigured ||
         _erpConfiguredUrl.isNotEmpty;
+    final defaultWarehouse = _currentDefaultWarehouse;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1296,6 +1516,79 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
             style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
           ),
         ],
+        const SizedBox(height: 28),
+        _SectionLabel(title: 'Warehouse setup', subtitle: ''),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilterChip(
+              selected: _warehouseMode == 'manual',
+              onSelected: _warehouseSetupLoading
+                  ? null
+                  : (_) {
+                      unawaited(
+                        _persistWarehouseSetup(
+                          mode: 'manual',
+                          defaultWarehouse: _defaultWarehouse,
+                        ),
+                      );
+                    },
+              label: const Text('Manual'),
+            ),
+            FilterChip(
+              selected: _warehouseMode == 'default',
+              onSelected: _warehouseSetupLoading
+                  ? null
+                  : (_) {
+                      unawaited(_openDefaultWarehousePicker());
+                    },
+              label: const Text('Default'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (_warehouseMode == 'default') ...[
+          if (defaultWarehouse.isEmpty)
+            Text(
+              'Default ombor tanlanmagan.',
+              style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+            )
+          else
+            Row(
+              children: [
+                const Icon(Icons.flag_rounded, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Default warehouse: $defaultWarehouse',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+                TextButton(
+                  onPressed: _warehouseSetupLoading
+                      ? null
+                      : () {
+                          unawaited(_openDefaultWarehousePicker());
+                        },
+                  child: const Text('Change'),
+                ),
+              ],
+            ),
+        ] else if (defaultWarehouse.isNotEmpty) ...[
+          _MiniIconRow(
+            icon: Icons.bookmark_outline,
+            text: 'Stored default: $defaultWarehouse',
+          ),
+        ],
+        if (_warehouseSetupError.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(
+            _warehouseSetupError,
+            style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+          ),
+        ],
         const SizedBox(height: 24),
         Row(
           children: [
@@ -1345,6 +1638,227 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     );
   }
 
+  Widget _buildArchiveSection(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme scheme,
+    DiscoveredServer server,
+  ) {
+    final sessions = _archiveSessions;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 20),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Archive',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${sessions.length} ta batch • ${server.handshake.serverName}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              onPressed: _archiveLoading
+                  ? null
+                  : () => unawaited(_refreshArchive()),
+              icon: const Icon(Icons.refresh_rounded),
+              tooltip: 'Refresh archive',
+            ),
+          ],
+        ),
+        if (_archiveError.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            _archiveError,
+            style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+          ),
+        ],
+        if (_archiveLoading) ...[
+          const SizedBox(height: 14),
+          const LinearProgressIndicator(minHeight: 2),
+        ],
+        const SizedBox(height: 18),
+        if (sessions.isEmpty && !_archiveLoading) ...[
+          Text(
+            "Archive hali bo'sh.",
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ] else ...[
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: sessions.length,
+            separatorBuilder: (context, index) => Divider(
+              height: 1,
+              color: scheme.outlineVariant.withValues(alpha: 0.6),
+            ),
+            itemBuilder: (context, index) {
+              final session = sessions[index];
+              return _buildArchiveSessionTile(session, theme, scheme);
+            },
+          ),
+        ],
+      ],
+    );
+  }
+
+  String _formatArchiveSessionSubtitle(MobileArchiveSession session) {
+    final parts = <String>[];
+    parts.add(session.active ? 'ACTIVE' : 'CLOSED');
+    if (session.startedAt.isNotEmpty) {
+      parts.add('Started ${formatArchiveTimestamp(session.startedAt)}');
+    }
+    if (session.endedAt.isNotEmpty) {
+      parts.add('Ended ${formatArchiveTimestamp(session.endedAt)}');
+    }
+    if (session.warehouse.isNotEmpty) {
+      parts.add(session.warehouse);
+    }
+    return parts.join(' • ');
+  }
+
+  String formatArchiveTimestamp(String raw) {
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) {
+      return raw;
+    }
+    final local = parsed.toLocal();
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final day = local.day.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$day ${months[local.month - 1]} $hour:$minute';
+  }
+
+  Widget _buildArchiveSessionTile(
+    MobileArchiveSession session,
+    ThemeData theme,
+    ColorScheme scheme,
+  ) {
+    final unit = session.displayUnit;
+    final title = session.displayItemName;
+    final subtitle = _formatArchiveSessionSubtitle(session);
+    final totalLabel = session.totalQty == 0
+        ? '0.000 $unit'
+        : '${session.totalQty.toStringAsFixed(3)} $unit';
+
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: const EdgeInsets.only(left: 12, right: 0, bottom: 12),
+      shape: const Border(),
+      collapsedShape: const Border(),
+      backgroundColor: Colors.transparent,
+      collapsedBackgroundColor: Colors.transparent,
+      iconColor: scheme.primary,
+      collapsedIconColor: scheme.primary,
+      leading: Icon(
+        session.active ? Icons.timelapse_rounded : Icons.archive_outlined,
+        color: session.active ? scheme.tertiary : scheme.primary,
+      ),
+      title: Text(
+        title.isEmpty ? '-' : title,
+        style: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+      trailing: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            totalLabel,
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '${session.printCount} print',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+      children: [
+        if (session.prints.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            child: Text(
+              "Print history hali yo'q.",
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          )
+        else
+          ...session.prints.map(
+            (entry) => ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                Icons.playlist_add_check_rounded,
+                size: 18,
+                color: scheme.primary,
+              ),
+              title: Text(
+                '${entry.qty.toStringAsFixed(3)} ${entry.unit}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              subtitle: Text(
+                [
+                  formatArchiveTimestamp(entry.printedAt),
+                  if (entry.draftName.isNotEmpty) entry.draftName,
+                ].join(' • '),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildControlSection(
     BuildContext context,
     ThemeData theme,
@@ -1354,6 +1868,8 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     final selectedProduct = _selectedItem;
     final selectedWarehouse = _selectedWarehouse;
     final batchRunning = _snapshot.batchActive;
+    final defaultWarehouse = _currentDefaultWarehouse;
+    final defaultMode = _warehouseMode == 'default';
     final printerStatusText = _printerStatusOverride.isNotEmpty
         ? _printerStatusOverride
         : _snapshot.printerLabel;
@@ -1394,7 +1910,10 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         const SizedBox(height: 12),
         _MiniIconRow(icon: Icons.print_outlined, text: printerStatusText),
         const SizedBox(height: 8),
-        _MiniIconRow(icon: Icons.scale_outlined, text: _snapshot.scaleConnectionLabel),
+        _MiniIconRow(
+          icon: Icons.scale_outlined,
+          text: _snapshot.scaleConnectionLabel,
+        ),
         const SizedBox(height: 28),
         _SectionLabel(title: 'Item selection', subtitle: ''),
         const SizedBox(height: 8),
@@ -1408,7 +1927,18 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         const SizedBox(height: 28),
         _SectionLabel(title: 'Warehouse selection', subtitle: ''),
         const SizedBox(height: 8),
-        if (selectedProduct == null) ...[
+        if (defaultMode) ...[
+          if (defaultWarehouse.isEmpty)
+            Text(
+              'Default ombor tanlanmagan.',
+              style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+            )
+          else
+            _MiniIconRow(
+              icon: Icons.flag_rounded,
+              text: 'Default warehouse: $defaultWarehouse',
+            ),
+        ] else if (selectedProduct == null) ...[
           const SizedBox(height: 10),
           Text(
             'Item tanlang, keyin warehouse chiqadi.',
@@ -1461,7 +1991,9 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
                 ),
                 onPressed:
                     selectedProduct == null ||
-                        selectedWarehouse == null ||
+                        (defaultMode
+                            ? defaultWarehouse.isEmpty
+                            : selectedWarehouse == null) ||
                         batchRunning ||
                         _batchActionLoading
                     ? null
@@ -1927,13 +2459,15 @@ class _WarehouseOptionTile extends StatelessWidget {
                       color: selected ? scheme.primary : scheme.onSurface,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    warehouse.caption,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
+                  if (warehouse.caption.trim().isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      warehouse.caption,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -2136,16 +2670,17 @@ class _ItemPickerSheetState extends State<_ItemPickerSheet> {
 
 class _WarehousePickerSheet extends StatefulWidget {
   const _WarehousePickerSheet({
-    required this.itemCode,
+    required this.title,
+    required this.queryHint,
+    required this.emptyText,
     required this.fetchWarehouses,
     this.initialWarehouse,
   });
 
-  final String itemCode;
-  final Future<List<MobileWarehouse>> Function({
-    required String itemCode,
-    required String query,
-  })
+  final String title;
+  final String queryHint;
+  final String emptyText;
+  final Future<List<MobileWarehouse>> Function({required String query})
   fetchWarehouses;
   final MobileWarehouse? initialWarehouse;
 
@@ -2196,10 +2731,7 @@ class _WarehousePickerSheetState extends State<_WarehousePickerSheet> {
       _error = '';
     });
     try {
-      final warehouses = await widget.fetchWarehouses(
-        itemCode: widget.itemCode,
-        query: search,
-      );
+      final warehouses = await widget.fetchWarehouses(query: search);
       if (!mounted) {
         return;
       }
@@ -2242,7 +2774,7 @@ class _WarehousePickerSheetState extends State<_WarehousePickerSheet> {
                     children: [
                       Expanded(
                         child: Text(
-                          'Warehouse tanlang',
+                          widget.title,
                           style: theme.textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.3,
@@ -2260,9 +2792,9 @@ class _WarehousePickerSheetState extends State<_WarehousePickerSheet> {
                     controller: _controller,
                     autofocus: true,
                     onChanged: (_) => _scheduleSearch(),
-                    decoration: const InputDecoration(
-                      hintText: 'Warehouse qidiring',
-                      prefixIcon: Icon(Icons.search_rounded),
+                    decoration: InputDecoration(
+                      hintText: widget.queryHint,
+                      prefixIcon: const Icon(Icons.search_rounded),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -2289,7 +2821,7 @@ class _WarehousePickerSheetState extends State<_WarehousePickerSheet> {
                             : _warehouses.isEmpty
                             ? Center(
                                 child: Text(
-                                  'Warehouse topilmadi.',
+                                  widget.emptyText,
                                   style: theme.textTheme.bodyMedium?.copyWith(
                                     color: scheme.onSurfaceVariant,
                                   ),
@@ -3119,21 +3651,34 @@ class MobileItem {
 }
 
 class MobileWarehouse {
-  const MobileWarehouse({required this.warehouse, this.actualQty});
+  const MobileWarehouse({
+    required this.warehouse,
+    this.actualQty,
+    this.company,
+  });
 
   factory MobileWarehouse.fromJson(Map<String, dynamic> json) {
     return MobileWarehouse(
       warehouse: _text(json['warehouse']),
       actualQty: (json['actual_qty'] as num?)?.toDouble(),
+      company: _text(json['company']),
     );
   }
 
   final String warehouse;
   final double? actualQty;
+  final String? company;
 
-  String get caption => actualQty == null
-      ? 'Qoldiq mavjud'
-      : 'Qoldiq: ${actualQty!.toStringAsFixed(3)}';
+  String get caption {
+    final companyText = company?.trim() ?? '';
+    if (companyText.isNotEmpty) {
+      return companyText;
+    }
+    if (actualQty != null) {
+      return 'Qoldiq: ${actualQty!.toStringAsFixed(3)}';
+    }
+    return '';
+  }
 
   String get label => actualQty == null
       ? warehouse
@@ -3163,6 +3708,89 @@ class MobileBatchState {
   final String warehouse;
 
   String get displayItemName => itemName.isEmpty ? itemCode : itemName;
+}
+
+class MobileArchivePrintEntry {
+  const MobileArchivePrintEntry({
+    required this.itemCode,
+    required this.itemName,
+    required this.qty,
+    required this.unit,
+    required this.printedAt,
+    required this.draftName,
+    required this.epc,
+  });
+
+  factory MobileArchivePrintEntry.fromJson(Map<String, dynamic> json) {
+    return MobileArchivePrintEntry(
+      itemCode: _text(json['item_code']),
+      itemName: _text(json['item_name']),
+      qty: (json['qty'] as num?)?.toDouble() ?? 0,
+      unit: _text(json['unit'], fallback: 'kg'),
+      printedAt: _text(json['printed_at']),
+      draftName: _text(json['draft_name']),
+      epc: _text(json['epc']),
+    );
+  }
+
+  final String itemCode;
+  final String itemName;
+  final double qty;
+  final String unit;
+  final String printedAt;
+  final String draftName;
+  final String epc;
+}
+
+class MobileArchiveSession {
+  const MobileArchiveSession({
+    required this.sessionId,
+    required this.active,
+    required this.itemCode,
+    required this.itemName,
+    required this.warehouse,
+    required this.startedAt,
+    required this.endedAt,
+    required this.totalQty,
+    required this.unit,
+    required this.printCount,
+    required this.prints,
+  });
+
+  factory MobileArchiveSession.fromJson(Map<String, dynamic> json) {
+    final rawPrints =
+        (json['prints'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+    return MobileArchiveSession(
+      sessionId: _text(json['session_id']),
+      active: json['active'] == true,
+      itemCode: _text(json['item_code']),
+      itemName: _text(json['item_name']),
+      warehouse: _text(json['warehouse']),
+      startedAt: _text(json['started_at']),
+      endedAt: _text(json['ended_at']),
+      totalQty: (json['total_qty'] as num?)?.toDouble() ?? 0,
+      unit: _text(json['unit'], fallback: 'kg'),
+      printCount: (json['print_count'] as num?)?.toInt() ?? rawPrints.length,
+      prints: rawPrints
+          .map(MobileArchivePrintEntry.fromJson)
+          .toList(growable: false),
+    );
+  }
+
+  final String sessionId;
+  final bool active;
+  final String itemCode;
+  final String itemName;
+  final String warehouse;
+  final String startedAt;
+  final String endedAt;
+  final double totalQty;
+  final String unit;
+  final int printCount;
+  final List<MobileArchivePrintEntry> prints;
+
+  String get displayItemName => itemName.isEmpty ? itemCode : itemName;
+  String get displayUnit => unit.isEmpty ? 'kg' : unit;
 }
 
 class DiscoveryResult {
