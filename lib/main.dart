@@ -2293,101 +2293,6 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
                   ),
                 ),
               ),
-              if (selectedQuantitySource == 'manual') ...[
-                const SizedBox(height: 10),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 56,
-                        child: TextField(
-                          controller: _manualQtyController,
-                          enabled: !_batchActionLoading && !_manualPrintLoading,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9.,]'),
-                            ),
-                          ],
-                          textAlignVertical: TextAlignVertical.center,
-                          decoration: InputDecoration(
-                            labelText: 'Manual brutto kg',
-                            suffixText: 'kg',
-                            hintText: '5',
-                            errorText: manualQtyInvalid
-                                ? 'Masalan: 5 yoki 4.22'
-                                : null,
-                            filled: true,
-                            fillColor: scheme.surfaceContainerLow,
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 14,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(
-                                color: scheme.outlineVariant,
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(
-                                color: scheme.primary,
-                                width: 1.4,
-                              ),
-                            ),
-                          ),
-                          onChanged: (_) => setState(() {}),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: SizedBox(
-                        height: 56,
-                        width: 56,
-                        child: IconButton.filled(
-                          tooltip: 'Print',
-                          onPressed:
-                              batchRunning &&
-                                  selectedQuantitySource == 'manual' &&
-                                  manualPrintReady &&
-                                  !_manualPrintLoading &&
-                                  !_batchActionLoading
-                              ? _printManualBatch
-                              : null,
-                          icon: _manualPrintLoading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.play_arrow_rounded),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (_manualPrintLoading) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    'Print yuborilmoqda...',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ],
               const SizedBox(height: 10),
               IgnorePointer(
                 ignoring: modeLocked || selectedPrinter == 'godex',
@@ -2426,6 +2331,75 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
             ],
           ),
         ),
+        if (selectedQuantitySource == 'manual') ...[
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 56,
+                  child: TextField(
+                    controller: _manualQtyController,
+                    enabled: !_batchActionLoading && !_manualPrintLoading,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                    ],
+                    textAlignVertical: TextAlignVertical.center,
+                    decoration: InputDecoration(
+                      labelText: 'Manual brutto kg',
+                      suffixText: 'kg',
+                      hintText: '5',
+                      errorText: manualQtyInvalid
+                          ? 'Masalan: 5 yoki 4.22'
+                          : null,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: SizedBox(
+                  height: 56,
+                  width: 56,
+                  child: IconButton.filled(
+                    tooltip: 'Print',
+                    onPressed:
+                        batchRunning &&
+                            selectedQuantitySource == 'manual' &&
+                            manualPrintReady &&
+                            !_manualPrintLoading &&
+                            !_batchActionLoading
+                        ? _printManualBatch
+                        : null,
+                    icon: _manualPrintLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.play_arrow_rounded),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (_manualPrintLoading) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Print yuborilmoqda...',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ],
         const SizedBox(height: 14),
         Row(
           children: [
