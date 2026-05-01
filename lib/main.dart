@@ -317,33 +317,70 @@ class _ServerPickerPageState extends State<ServerPickerPage> {
     widget.onOpenServer(server);
   }
 
+  Future<void> _confirmExitAndClose() async {
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Ilovadan chiqish'),
+          content: const Text('Ilovadan rostdan chiqib ketasizmi?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Yo\'q'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Ha'),
+            ),
+          ],
+        );
+      },
+    );
+    if (shouldExit == true && mounted) {
+      SystemNavigator.pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final servers = _result?.servers ?? const <DiscoveredServer>[];
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('gscale-zebra'),
-        actions: [
-          IconButton(
-            onPressed: _openManualEntrySheet,
-            icon: const Icon(Icons.add_link_rounded),
-            tooltip: 'Add',
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _scan,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
-          children: [
-            if (_scanning && servers.isEmpty) const _ScanningState(),
-            if (!_scanning && servers.isEmpty)
-              _EmptyServerState(onManualAdd: _openManualEntrySheet),
-            if (servers.isNotEmpty)
-              _ServerList(servers: servers, onOpenServer: widget.onOpenServer),
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) {
+          unawaited(_confirmExitAndClose());
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('gscale-zebra'),
+          actions: [
+            IconButton(
+              onPressed: _openManualEntrySheet,
+              icon: const Icon(Icons.add_link_rounded),
+              tooltip: 'Add',
+            ),
           ],
+        ),
+        body: RefreshIndicator(
+          onRefresh: _scan,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+            children: [
+              if (_scanning && servers.isEmpty) const _ScanningState(),
+              if (!_scanning && servers.isEmpty)
+                _EmptyServerState(onManualAdd: _openManualEntrySheet),
+              if (servers.isNotEmpty)
+                _ServerList(
+                  servers: servers,
+                  onOpenServer: widget.onOpenServer,
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -1514,78 +1551,86 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     final scheme = theme.colorScheme;
     final server = widget.server;
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          onPressed: widget.onChangeServer,
-          icon: const Icon(Icons.arrow_back_rounded),
-          tooltip: 'Change server',
-        ),
-        title: Text(server.handshake.serverName),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 18),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.speed_outlined, size: 18, color: scheme.primary),
-                const SizedBox(width: 8),
-                Text(
-                  _snapshot.latencyMs > 0 ? '${_snapshot.latencyMs} ms' : '—',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurface,
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) {
+          widget.onChangeServer();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            onPressed: widget.onChangeServer,
+            icon: const Icon(Icons.arrow_back_rounded),
+            tooltip: 'Change server',
+          ),
+          title: Text(server.handshake.serverName),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 18),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.speed_outlined, size: 18, color: scheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    _snapshot.latencyMs > 0 ? '${_snapshot.latencyMs} ms' : '—',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurface,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 220),
-        child: switch (_selectedSection) {
-          0 => _DashboardScrollView(
-            key: const ValueKey('control-section'),
-            child: _buildControlSection(context, theme, scheme, server),
-          ),
-          1 => _DashboardScrollView(
-            key: const ValueKey('server-section'),
-            child: _buildServerSection(context, theme, scheme, server),
-          ),
-          _ => _DashboardScrollView(
-            key: const ValueKey('archive-section'),
-            child: _buildArchiveSection(context, theme, scheme, server),
-          ),
-        },
-      ),
-      bottomNavigationBar: NavigationBar(
-        height: 64,
-        selectedIndex: _selectedSection,
-        onDestinationSelected: (index) {
-          setState(() {
-            _selectedSection = index;
-          });
-          if (index == 2) {
-            unawaited(_refreshArchive());
-          }
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.tune_outlined),
-            selectedIcon: Icon(Icons.tune),
-            label: 'Control',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.health_and_safety_outlined),
-            selectedIcon: Icon(Icons.health_and_safety),
-            label: 'Server',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.archive_outlined),
-            selectedIcon: Icon(Icons.archive),
-            label: 'Archive',
-          ),
-        ],
+          ],
+        ),
+        body: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          child: switch (_selectedSection) {
+            0 => _DashboardScrollView(
+              key: const ValueKey('control-section'),
+              child: _buildControlSection(context, theme, scheme, server),
+            ),
+            1 => _DashboardScrollView(
+              key: const ValueKey('server-section'),
+              child: _buildServerSection(context, theme, scheme, server),
+            ),
+            _ => _DashboardScrollView(
+              key: const ValueKey('archive-section'),
+              child: _buildArchiveSection(context, theme, scheme, server),
+            ),
+          },
+        ),
+        bottomNavigationBar: NavigationBar(
+          height: 64,
+          selectedIndex: _selectedSection,
+          onDestinationSelected: (index) {
+            setState(() {
+              _selectedSection = index;
+            });
+            if (index == 2) {
+              unawaited(_refreshArchive());
+            }
+          },
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.tune_outlined),
+              selectedIcon: Icon(Icons.tune),
+              label: 'Control',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.health_and_safety_outlined),
+              selectedIcon: Icon(Icons.health_and_safety),
+              label: 'Server',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.archive_outlined),
+              selectedIcon: Icon(Icons.archive),
+              label: 'Archive',
+            ),
+          ],
+        ),
       ),
     );
   }
