@@ -1988,8 +1988,6 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     final printerLocked = batchRunning || _batchActionLoading;
     final selectedPrinter = normalizePrinterChoice(_batchPrinter);
     final selectedQuantitySource = normalizeQuantitySource(_quantitySource);
-    final batchPrintMode = _batchPrintMode == 'label' ? 'Label only' : 'RFID';
-    final batchPrinterLabel = displayPrinterChoice(selectedPrinter);
     final manualQtyKg = selectedQuantitySource == 'manual'
         ? parsePositiveKg(_manualQtyController.text)
         : null;
@@ -2029,40 +2027,6 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
             ),
           ],
         ),
-        if (_snapshot.batchActive) ...[
-          const SizedBox(height: 12),
-          _MiniIconRow(
-            icon: Icons.playlist_add_check_circle_outlined,
-            text:
-                '${_snapshot.batchItemName.isEmpty ? _snapshot.batchItemCode : _snapshot.batchItemName} • ${_snapshot.batchWarehouse}',
-          ),
-          const SizedBox(height: 8),
-          _MiniIconRow(
-            icon: Icons.local_printshop_outlined,
-            text: 'Print type: $batchPrintMode',
-          ),
-          const SizedBox(height: 8),
-          _MiniIconRow(
-            icon: Icons.precision_manufacturing_outlined,
-            text: 'Printer: $batchPrinterLabel',
-          ),
-          const SizedBox(height: 8),
-          _MiniIconRow(
-            icon: _snapshot.batchQuantitySource == 'manual'
-                ? Icons.edit_note_rounded
-                : Icons.scale_outlined,
-            text: _snapshot.batchQuantitySource == 'manual'
-                ? 'KG: manual ${formatCompactKg(_snapshot.batchManualQtyKg)} kg'
-                : 'KG: tarozidan',
-          ),
-          if (_snapshot.batchTareEnabled && _snapshot.batchTareKg > 0) ...[
-            const SizedBox(height: 8),
-            _MiniIconRow(
-              icon: Icons.functions_rounded,
-              text: 'Babina: ${formatCompactKg(_snapshot.batchTareKg)} kg',
-            ),
-          ],
-        ],
         const SizedBox(height: 12),
         _MiniIconRow(icon: Icons.print_outlined, text: printerStatusText),
         const SizedBox(height: 8),
@@ -2172,27 +2136,41 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
               suffixText: 'kg',
               hintText: '0.78',
               errorText: babinaInvalid ? 'Masalan: 0.78' : null,
-              filled: true,
-              fillColor: scheme.surfaceContainerLow,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 18,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: scheme.outlineVariant),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: scheme.primary, width: 1.4),
-              ),
+              border: const OutlineInputBorder(),
             ),
             onChanged: (_) => setState(() {}),
           ),
         ],
+        const SizedBox(height: 14),
+        IgnorePointer(
+          ignoring: printerLocked,
+          child: Opacity(
+            opacity: printerLocked ? 0.6 : 1,
+            child: SegmentedButton<String>(
+              segments: const [
+                ButtonSegment<String>(
+                  value: 'scale',
+                  label: Text('Scale kg'),
+                  icon: Icon(Icons.scale_outlined),
+                ),
+                ButtonSegment<String>(
+                  value: 'manual',
+                  label: Text('Manual kg'),
+                  icon: Icon(Icons.edit_note_rounded),
+                ),
+              ],
+              selected: <String>{selectedQuantitySource},
+              onSelectionChanged: (selection) {
+                if (selection.isEmpty) {
+                  return;
+                }
+                setState(() {
+                  _quantitySource = normalizeQuantitySource(selection.first);
+                });
+              },
+            ),
+          ),
+        ),
         const SizedBox(height: 14),
         Container(
           decoration: BoxDecoration(
@@ -2262,37 +2240,6 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
                 ),
               ],
               const SizedBox(height: 10),
-              IgnorePointer(
-                ignoring: printerLocked,
-                child: Opacity(
-                  opacity: printerLocked ? 0.6 : 1,
-                  child: SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment<String>(
-                        value: 'scale',
-                        label: Text('Scale kg'),
-                        icon: Icon(Icons.scale_outlined),
-                      ),
-                      ButtonSegment<String>(
-                        value: 'manual',
-                        label: Text('Manual kg'),
-                        icon: Icon(Icons.edit_note_rounded),
-                      ),
-                    ],
-                    selected: <String>{selectedQuantitySource},
-                    onSelectionChanged: (selection) {
-                      if (selection.isEmpty) {
-                        return;
-                      }
-                      setState(() {
-                        _quantitySource = normalizeQuantitySource(
-                          selection.first,
-                        );
-                      });
-                    },
-                  ),
-                ),
-              ),
               const SizedBox(height: 10),
               IgnorePointer(
                 ignoring: modeLocked || selectedPrinter == 'godex',
