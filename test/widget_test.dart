@@ -73,6 +73,8 @@ void main() {
     });
 
     expect(snapshot.printerLabel, 'godex: ulangan');
+    expect(snapshot.printerKind, 'godex');
+    expect(snapshot.livePrinterChoice, 'godex');
   });
 
   test('manual print helper disables blank and undersized values', () {

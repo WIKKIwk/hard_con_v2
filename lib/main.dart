@@ -876,6 +876,15 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
           _babinaWeightController.text = formatCompactKg(snapshot.batchTareKg);
         }
       }
+    } else {
+      final livePrinter = snapshot.livePrinterChoice;
+      if (livePrinter.isNotEmpty && livePrinter != _batchPrinter) {
+        _batchPrinter = livePrinter;
+        if (livePrinter == 'godex') {
+          _batchPrintMode = 'label';
+        }
+        _scheduleSaveControlPrefs();
+      }
     }
     if (!mounted) {
       return;
@@ -3841,6 +3850,7 @@ class MonitorSnapshot {
     required this.serverLabel,
     required this.monitorLabel,
     required this.printerLabel,
+    required this.printerKind,
     required this.printerState,
     required this.printerEventKey,
     required this.printerEventMessage,
@@ -3871,6 +3881,7 @@ class MonitorSnapshot {
       serverLabel: 'API: idle',
       monitorLabel: 'Scale, Zebra, batch va print request holati',
       printerLabel: 'ulanmagan',
+      printerKind: '',
       printerState: 'idle',
       printerEventKey: '',
       printerEventMessage: '',
@@ -3929,6 +3940,7 @@ class MonitorSnapshot {
       printerStateJson['label'],
       fallback: 'ulanmagan',
     );
+    final printerKind = _text(printerStateJson['kind']);
     final printRequestEpc = _text(printRequest['epc']);
     final printRequestError = _text(printRequest['error']);
 
@@ -3947,6 +3959,7 @@ class MonitorSnapshot {
           : 'API: offline',
       monitorLabel: batchItem.isEmpty ? 'No active batch' : 'Batch: $batchItem',
       printerLabel: printerConnected ? printerLabel : 'ulanmagan',
+      printerKind: printerConnected ? printerKind : '',
       printerState: derivePrinterState(
         printStatus: printStatus,
         latestPrinterStatus: printStatus,
@@ -3994,6 +4007,7 @@ class MonitorSnapshot {
       serverLabel: serverLabel,
       monitorLabel: itemName.isEmpty ? 'No active batch' : 'Batch: $itemName',
       printerLabel: printerLabel,
+      printerKind: printerKind,
       printerState: printerState,
       printerEventKey: printerEventKey,
       printerEventMessage: printerEventMessage,
@@ -4029,6 +4043,7 @@ class MonitorSnapshot {
   final String serverLabel;
   final String monitorLabel;
   final String printerLabel;
+  final String printerKind;
   final String printerState;
   final String printerEventKey;
   final String printerEventMessage;
@@ -4058,6 +4073,7 @@ class MonitorSnapshot {
       serverLabel: serverLabel,
       monitorLabel: monitorLabel,
       printerLabel: printerLabel,
+      printerKind: printerKind,
       printerState: printerState,
       printerEventKey: printerEventKey,
       printerEventMessage: printerEventMessage,
@@ -4073,6 +4089,21 @@ class MonitorSnapshot {
       batchTareKg: batchTareKg,
       latencyMs: latencyMs,
     );
+  }
+
+  String get livePrinterChoice {
+    final kind = printerKind.trim().toLowerCase();
+    if (kind == 'zebra' || kind == 'godex') {
+      return kind;
+    }
+    final label = printerLabel.trim().toLowerCase();
+    if (label.startsWith('zebra')) {
+      return 'zebra';
+    }
+    if (label.startsWith('godex') || label.startsWith('go-dex')) {
+      return 'godex';
+    }
+    return '';
   }
 }
 
