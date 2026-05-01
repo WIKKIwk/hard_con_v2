@@ -24,6 +24,7 @@ const _directProbePorts = <int>[39117, 41257, 43391, 45533, 47681];
 const _enableAutomaticSubnetSweep = false;
 const _lastServerKey = 'last_server_base_url';
 const _cachedServersKey = 'cached_servers_v1';
+const _controlDraftKey = 'operator_control_draft_v1';
 const _defaultWifiServerAddress = 'http://gscale.local:39117';
 const _bonjourDiscoveryTimeout = Duration(milliseconds: 350);
 const _bonjourDiscoveryChannel = MethodChannel('gscale/bonjour');
@@ -413,16 +414,21 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
   MobileWarehouse? _selectedWarehouse;
   Timer? _pingTimer;
   Timer? _printerStatusTimer;
+  Timer? _controlPrefsDebounce;
   String _printerStatusOverride = '';
+  bool _suspendControlPrefsSave = false;
 
   @override
   void initState() {
     super.initState();
     _warehouseSearchController.addListener(_scheduleWarehouseSearch);
+    _manualQtyController.addListener(_scheduleSaveControlPrefs);
+    _babinaWeightController.addListener(_scheduleSaveControlPrefs);
     _warehouseSearchFocusNode.addListener(_handleSearchFocusChanged);
     _snapshot = MonitorSnapshot.empty().copyWithLatency(
       widget.server.latencyMs,
     );
+    _loadControlDraftPreferences();
     _startLiveStream();
     _startPingLoop();
     unawaited(_refreshSetupStatus());
@@ -433,6 +439,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     _warehouseSearchDebounce?.cancel();
     _pingTimer?.cancel();
     _printerStatusTimer?.cancel();
+    _controlPrefsDebounce?.cancel();
     _erpUrlController.dispose();
     _erpApiKeyController.dispose();
     _erpApiSecretController.dispose();
@@ -471,6 +478,87 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     _streamGeneration++;
     unawaited(_streamSubscription?.cancel());
     _streamSubscription = null;
+  }
+
+  void _runWithoutSavingControlPrefs(void Function() action) {
+    _suspendControlPrefsSave = true;
+    try {
+      action();
+    } finally {
+      _suspendControlPrefsSave = false;
+    }
+  }
+
+  void _scheduleSaveControlPrefs() {
+    if (_suspendControlPrefsSave) {
+      return;
+    }
+    _controlPrefsDebounce?.cancel();
+    _controlPrefsDebounce = Timer(const Duration(milliseconds: 180), () {
+      if (!mounted || _suspendControlPrefsSave) {
+        return;
+      }
+      unawaited(_saveControlDraftPreferences());
+    });
+  }
+
+  Future<void> _loadControlDraftPreferences() async {
+    final draft = await loadOperatorControlDraft();
+    if (!mounted || _snapshot.batchActive) {
+      return;
+    }
+
+    _runWithoutSavingControlPrefs(() {
+      setState(() {
+        if (draft.itemCode.trim().isNotEmpty) {
+          _selectedItem = MobileItem(
+            itemCode: draft.itemCode,
+            itemName: draft.itemName.isNotEmpty
+                ? draft.itemName
+                : draft.itemCode,
+          );
+        }
+        if (_selectedItem != null && draft.warehouse.trim().isNotEmpty) {
+          _selectedWarehouse = MobileWarehouse(warehouse: draft.warehouse);
+        }
+        _batchPrintMode = draft.printMode.isNotEmpty
+            ? draft.printMode
+            : _batchPrintMode;
+        _batchPrinter = draft.printer.isNotEmpty
+            ? draft.printer
+            : _batchPrinter;
+        if (_batchPrinter == 'godex') {
+          _batchPrintMode = 'label';
+        }
+        _quantitySource = draft.quantitySource.isNotEmpty
+            ? draft.quantitySource
+            : _quantitySource;
+        _babinaEnabled = draft.babinaEnabled;
+        _manualQtyController.text = draft.manualQtyText;
+        _babinaWeightController.text = draft.babinaText;
+      });
+    });
+
+    if (_selectedItem != null) {
+      unawaited(_loadWarehouses(itemCode: _selectedItem!.itemCode));
+    }
+  }
+
+  Future<void> _saveControlDraftPreferences() async {
+    final draft = OperatorControlDraft(
+      itemCode: _selectedItem?.itemCode ?? '',
+      itemName: _selectedItem?.itemName ?? '',
+      warehouse: _selectedWarehouse?.warehouse ?? '',
+      printMode: _batchPrinter == 'godex'
+          ? 'label'
+          : (_batchPrintMode == 'label' ? 'label' : 'rfid'),
+      printer: normalizePrinterChoice(_batchPrinter),
+      quantitySource: normalizeQuantitySource(_quantitySource),
+      manualQtyText: _manualQtyController.text.trim(),
+      babinaEnabled: _babinaEnabled,
+      babinaText: _babinaWeightController.text.trim(),
+    );
+    await saveOperatorControlDraft(draft);
   }
 
   Future<void> _refreshLatency() async {
@@ -1028,6 +1116,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
       _warehouses = const [];
       _warehouseSearchController.clear();
     });
+    _scheduleSaveControlPrefs();
     await _loadWarehouses(itemCode: item.itemCode);
   }
 
@@ -1079,6 +1168,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     setState(() {
       _selectedWarehouse = warehouse;
     });
+    _scheduleSaveControlPrefs();
   }
 
   Future<void> _startBatch() async {
@@ -1148,6 +1238,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         }
         _batchActionLoading = false;
       });
+      _scheduleSaveControlPrefs();
       unawaited(_refreshArchive());
     } catch (error) {
       if (!mounted) {
@@ -1209,6 +1300,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         _quantitySource = updatedBatch.quantitySource;
         _manualPrintLoading = false;
       });
+      _scheduleSaveControlPrefs();
       unawaited(_refreshArchive());
     } catch (error) {
       if (!mounted) {
@@ -2128,6 +2220,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
                       setState(() {
                         _babinaEnabled = selection.first;
                       });
+                      _scheduleSaveControlPrefs();
                     },
             ),
           ],
@@ -2180,6 +2273,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
                 setState(() {
                   _quantitySource = normalizeQuantitySource(selection.first);
                 });
+                _scheduleSaveControlPrefs();
               },
             ),
           ),
@@ -2299,6 +2393,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
                         _batchPrintMode = 'label';
                       }
                     });
+                    _scheduleSaveControlPrefs();
                   },
                 ),
               ),
@@ -2340,6 +2435,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
                     setState(() {
                       _batchPrintMode = nextMode;
                     });
+                    _scheduleSaveControlPrefs();
                   },
                 ),
               ),
@@ -4814,6 +4910,112 @@ String _text(Object? value, {String fallback = ''}) {
     return fallback;
   }
   return text;
+}
+
+class OperatorControlDraft {
+  const OperatorControlDraft({
+    required this.itemCode,
+    required this.itemName,
+    required this.warehouse,
+    required this.printMode,
+    required this.printer,
+    required this.quantitySource,
+    required this.manualQtyText,
+    required this.babinaEnabled,
+    required this.babinaText,
+  });
+
+  final String itemCode;
+  final String itemName;
+  final String warehouse;
+  final String printMode;
+  final String printer;
+  final String quantitySource;
+  final String manualQtyText;
+  final bool babinaEnabled;
+  final String babinaText;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'item_code': itemCode,
+      'item_name': itemName,
+      'warehouse': warehouse,
+      'print_mode': printMode,
+      'printer': printer,
+      'quantity_source': quantitySource,
+      'manual_qty_text': manualQtyText,
+      'babina_enabled': babinaEnabled,
+      'babina_text': babinaText,
+    };
+  }
+
+  factory OperatorControlDraft.fromJson(Map<String, dynamic> json) {
+    return OperatorControlDraft(
+      itemCode: _text(json['item_code']),
+      itemName: _text(json['item_name']),
+      warehouse: _text(json['warehouse']),
+      printMode: _text(json['print_mode']),
+      printer: normalizePrinterChoice(_text(json['printer'])),
+      quantitySource: normalizeQuantitySource(_text(json['quantity_source'])),
+      manualQtyText: _text(json['manual_qty_text']),
+      babinaEnabled: json['babina_enabled'] == true,
+      babinaText: _text(json['babina_text']),
+    );
+  }
+}
+
+Future<void> saveOperatorControlDraft(OperatorControlDraft draft) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(_controlDraftKey, jsonEncode(draft.toJson()));
+}
+
+Future<OperatorControlDraft> loadOperatorControlDraft() async {
+  final prefs = await SharedPreferences.getInstance();
+  final value = prefs.getString(_controlDraftKey);
+  if (value == null || value.trim().isEmpty) {
+    return const OperatorControlDraft(
+      itemCode: '',
+      itemName: '',
+      warehouse: '',
+      printMode: '',
+      printer: '',
+      quantitySource: '',
+      manualQtyText: '',
+      babinaEnabled: false,
+      babinaText: '',
+    );
+  }
+
+  try {
+    final payload = jsonDecode(value);
+    final json = (payload as Map?)?.cast<String, dynamic>();
+    if (json == null) {
+      return const OperatorControlDraft(
+        itemCode: '',
+        itemName: '',
+        warehouse: '',
+        printMode: '',
+        printer: '',
+        quantitySource: '',
+        manualQtyText: '',
+        babinaEnabled: false,
+        babinaText: '',
+      );
+    }
+    return OperatorControlDraft.fromJson(json);
+  } catch (_) {
+    return const OperatorControlDraft(
+      itemCode: '',
+      itemName: '',
+      warehouse: '',
+      printMode: '',
+      printer: '',
+      quantitySource: '',
+      manualQtyText: '',
+      babinaEnabled: false,
+      babinaText: '',
+    );
+  }
 }
 
 Future<void> saveLastUsedServer(ServerEndpoint endpoint) async {

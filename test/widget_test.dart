@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_app/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('renders server picker shell', (tester) async {
@@ -86,5 +87,34 @@ void main() {
       ),
       isTrue,
     );
+  });
+
+  test('operator control draft persists and restores', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    const draft = OperatorControlDraft(
+      itemCode: 'ITEM-001',
+      itemName: 'Green Tea',
+      warehouse: 'Stores - A',
+      printMode: 'label',
+      printer: 'godex',
+      quantitySource: 'manual',
+      manualQtyText: '6',
+      babinaEnabled: true,
+      babinaText: '0.78',
+    );
+
+    await saveOperatorControlDraft(draft);
+    final restored = await loadOperatorControlDraft();
+
+    expect(restored.itemCode, draft.itemCode);
+    expect(restored.itemName, draft.itemName);
+    expect(restored.warehouse, draft.warehouse);
+    expect(restored.printMode, draft.printMode);
+    expect(restored.printer, draft.printer);
+    expect(restored.quantitySource, draft.quantitySource);
+    expect(restored.manualQtyText, draft.manualQtyText);
+    expect(restored.babinaEnabled, isTrue);
+    expect(restored.babinaText, draft.babinaText);
   });
 }
