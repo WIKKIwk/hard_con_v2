@@ -2151,7 +2151,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     final printerStatusText = _printerStatusOverride.isNotEmpty
         ? _printerStatusOverride
         : buildPrinterStatusLabel(
-            printerConnected: _snapshot.printerLabel != 'Printer: ulanmagan',
+            printerConnected: _snapshot.printerLabel != 'ulanmagan',
             printerChoice: selectedPrinter,
             printerState: _snapshot.printerState,
           );
@@ -3874,7 +3874,7 @@ class MonitorSnapshot {
       bridgeCaption: 'Shared state',
       serverLabel: 'API: idle',
       monitorLabel: 'Scale, Zebra, batch va print request holati',
-      printerLabel: 'Printer: ulanmagan',
+      printerLabel: 'ulanmagan',
       printerState: 'idle',
       printerEventKey: '',
       printerEventMessage: '',
@@ -4106,16 +4106,16 @@ String buildPrinterStatusLabel({
   required String printerState,
 }) {
   if (!printerConnected) {
-    return 'Printer: ulanmagan';
+    return 'ulanmagan';
   }
   final printerName = normalizePrinterChoice(printerChoice) == 'godex'
       ? 'godex'
       : 'zebra';
   switch (printerState.trim().toLowerCase()) {
     case 'processing':
-      return 'Printer: $printerName: printing';
+      return '$printerName: printing';
     default:
-      return 'Printer: $printerName: ulangan';
+      return '$printerName: ulangan';
   }
 }
 
@@ -4257,16 +4257,14 @@ String buildPrinterEventMessage({
       : 'zebra';
   if (state == 'done') {
     return epc.isEmpty
-        ? 'Printer: $printerName: print qildi'
-        : 'Printer: $printerName: print qildi • $epc';
+        ? '$printerName: print qildi'
+        : '$printerName: print qildi • $epc';
   }
   if (state == 'error') {
     if (err.isNotEmpty) {
-      return 'Printer: $printerName: failed • $err';
+      return '$printerName: failed • $err';
     }
-    return epc.isEmpty
-        ? 'Printer: $printerName: failed'
-        : 'Printer: $printerName: failed • $epc';
+    return epc.isEmpty ? '$printerName: failed' : '$printerName: failed • $epc';
   }
   return '';
 }

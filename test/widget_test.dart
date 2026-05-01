@@ -56,7 +56,7 @@ void main() {
     expect(snapshot.batchManualQtyKg, 5.25);
     expect(snapshot.batchTareEnabled, isTrue);
     expect(snapshot.batchTareKg, 0.78);
-    expect(snapshot.printerLabel, 'Printer: ulanmagan');
+    expect(snapshot.printerLabel, 'ulanmagan');
   });
 
   test('printer status label shows selected printer name', () {
@@ -66,7 +66,7 @@ void main() {
         printerChoice: 'zebra',
         printerState: 'idle',
       ),
-      'Printer: zebra: ulangan',
+      'zebra: ulangan',
     );
     expect(
       buildPrinterStatusLabel(
@@ -74,7 +74,7 @@ void main() {
         printerChoice: 'godex',
         printerState: 'processing',
       ),
-      'Printer: godex: printing',
+      'godex: printing',
     );
     expect(
       buildPrinterStatusLabel(
@@ -82,7 +82,7 @@ void main() {
         printerChoice: 'godex',
         printerState: 'idle',
       ),
-      'Printer: ulanmagan',
+      'ulanmagan',
     );
   });
 
