@@ -59,31 +59,20 @@ void main() {
     expect(snapshot.printerLabel, 'ulanmagan');
   });
 
-  test('printer status label shows selected printer name', () {
-    expect(
-      buildPrinterStatusLabel(
-        printerConnected: true,
-        printerChoice: 'zebra',
-        printerState: 'idle',
-      ),
-      'zebra: ulangan',
-    );
-    expect(
-      buildPrinterStatusLabel(
-        printerConnected: true,
-        printerChoice: 'godex',
-        printerState: 'processing',
-      ),
-      'godex: printing',
-    );
-    expect(
-      buildPrinterStatusLabel(
-        printerConnected: false,
-        printerChoice: 'godex',
-        printerState: 'idle',
-      ),
-      'ulanmagan',
-    );
+  test('parses live printer snapshot label', () {
+    final snapshot = MonitorSnapshot.fromJson(const {
+      'ok': true,
+      'state': {
+        'printer': {
+          'connected': true,
+          'kind': 'godex',
+          'label': 'godex: ulangan',
+        },
+      },
+      'printer': {'ok': false},
+    });
+
+    expect(snapshot.printerLabel, 'godex: ulangan');
   });
 
   test('manual print helper disables blank and undersized values', () {

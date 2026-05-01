@@ -2150,11 +2150,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         babinaKg == null;
     final printerStatusText = _printerStatusOverride.isNotEmpty
         ? _printerStatusOverride
-        : buildPrinterStatusLabel(
-            printerConnected: _snapshot.printerLabel != 'ulanmagan',
-            printerChoice: selectedPrinter,
-            printerState: _snapshot.printerState,
-          );
+        : _snapshot.printerLabel;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3899,8 +3895,6 @@ class MonitorSnapshot {
     final batch = (state['batch'] as Map?)?.cast<String, dynamic>() ?? const {};
     final printRequest =
         (state['print_request'] as Map?)?.cast<String, dynamic>() ?? const {};
-    final printer =
-        (json['printer'] as Map?)?.cast<String, dynamic>() ?? const {};
 
     final scaleWeight = scale['weight'];
     final scaleUnit = _text(scale['unit'], fallback: 'kg');
@@ -3928,25 +3922,15 @@ class MonitorSnapshot {
     final batchTareKg = (batch['tare_kg'] as num?)?.toDouble() ?? 0;
 
     final printStatus = _text(printRequest['status'], fallback: 'idle');
-    final printerConnected = printer['ok'] == true;
-    final activePrinterEPC = _text(printer['active_epc']);
-    final history =
-        (printer['history'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-    final latestPrinter = history.isEmpty
-        ? const <String, dynamic>{}
-        : history.first;
-    final latestPrinterStatus = _text(
-      latestPrinter['status'],
-      fallback: 'idle',
+    final printerStateJson =
+        (state['printer'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final printerConnected = printerStateJson['connected'] == true;
+    final printerLabel = _text(
+      printerStateJson['label'],
+      fallback: 'ulanmagan',
     );
-    final latestPrinterError = _text(
-      latestPrinter['error'],
-      fallback: _text(printRequest['error']),
-    );
-    final latestPrinterEPC = _text(
-      latestPrinter['epc'],
-      fallback: _text(printRequest['epc']),
-    );
+    final printRequestEpc = _text(printRequest['epc']);
+    final printRequestError = _text(printRequest['error']);
 
     return MonitorSnapshot(
       scaleValue: scaleWeight == null ? '--' : '$scaleWeight $scaleUnit',
@@ -3962,31 +3946,23 @@ class MonitorSnapshot {
           ? 'API: online'
           : 'API: offline',
       monitorLabel: batchItem.isEmpty ? 'No active batch' : 'Batch: $batchItem',
-      printerLabel: buildPrinterStatusLabel(
-        printerConnected: printerConnected,
-        printerChoice: batchPrinter,
-        printerState: derivePrinterState(
-          printStatus: printStatus,
-          latestPrinterStatus: latestPrinterStatus,
-          activePrinterEPC: activePrinterEPC,
-        ),
-      ),
+      printerLabel: printerConnected ? printerLabel : 'ulanmagan',
       printerState: derivePrinterState(
         printStatus: printStatus,
-        latestPrinterStatus: latestPrinterStatus,
-        activePrinterEPC: activePrinterEPC,
+        latestPrinterStatus: printStatus,
+        activePrinterEPC: printStatus == 'processing' ? printRequestEpc : '',
       ),
       printerEventKey: buildPrinterEventKey(
-        latestPrinterStatus: latestPrinterStatus,
-        latestPrinterEPC: latestPrinterEPC,
-        latestPrinterError: latestPrinterError,
+        latestPrinterStatus: printStatus,
+        latestPrinterEPC: printRequestEpc,
+        latestPrinterError: printRequestError,
         printStatus: printStatus,
       ),
       printerEventMessage: buildPrinterEventMessage(
         printStatus: printStatus,
-        latestPrinterStatus: latestPrinterStatus,
-        latestPrinterEPC: latestPrinterEPC,
-        latestPrinterError: latestPrinterError,
+        latestPrinterStatus: printStatus,
+        latestPrinterEPC: printRequestEpc,
+        latestPrinterError: printRequestError,
         printerChoice: batchPrinter,
       ),
       batchActive: batchActive,
@@ -4097,25 +4073,6 @@ class MonitorSnapshot {
       batchTareKg: batchTareKg,
       latencyMs: latencyMs,
     );
-  }
-}
-
-String buildPrinterStatusLabel({
-  required bool printerConnected,
-  required String printerChoice,
-  required String printerState,
-}) {
-  if (!printerConnected) {
-    return 'ulanmagan';
-  }
-  final printerName = normalizePrinterChoice(printerChoice) == 'godex'
-      ? 'godex'
-      : 'zebra';
-  switch (printerState.trim().toLowerCase()) {
-    case 'processing':
-      return '$printerName: printing';
-    default:
-      return '$printerName: ulangan';
   }
 }
 
