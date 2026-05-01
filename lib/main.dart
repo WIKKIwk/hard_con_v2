@@ -2171,115 +2171,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
             ),
           ),
         ),
-        const SizedBox(height: 14),
-        Container(
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: scheme.outlineVariant),
-          ),
-          child: ExpansionTile(
-            key: const PageStorageKey<String>('batch_actions_tile'),
-            initiallyExpanded: false,
-            maintainState: true,
-            tilePadding: const EdgeInsets.symmetric(
-              horizontal: 14,
-              vertical: 6,
-            ),
-            childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-            title: Text(
-              'Batch actions',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            children: [
-              IgnorePointer(
-                ignoring: printerLocked,
-                child: Opacity(
-                  opacity: printerLocked ? 0.6 : 1,
-                  child: SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment<String>(
-                        value: 'zebra',
-                        label: Text('Zebra'),
-                        icon: Icon(Icons.memory_rounded),
-                      ),
-                      ButtonSegment<String>(
-                        value: 'godex',
-                        label: Text('GoDEX'),
-                        icon: Icon(Icons.local_printshop_outlined),
-                      ),
-                    ],
-                    selected: <String>{selectedPrinter},
-                    onSelectionChanged: (selection) {
-                      if (selection.isEmpty) {
-                        return;
-                      }
-                      final nextPrinter = normalizePrinterChoice(
-                        selection.first,
-                      );
-                      if (nextPrinter == selectedPrinter) {
-                        return;
-                      }
-                      setState(() {
-                        _batchPrinter = nextPrinter;
-                        if (nextPrinter == 'godex') {
-                          _batchPrintMode = 'label';
-                        }
-                      });
-                    },
-                  ),
-                ),
-              ),
-              if (selectedPrinter == 'godex') ...[
-                const SizedBox(height: 8),
-                _MiniIconRow(
-                  icon: Icons.info_outline_rounded,
-                  text: 'GoDEX label-only chop qiladi, RFID encode qilmaydi.',
-                ),
-              ],
-              const SizedBox(height: 10),
-              const SizedBox(height: 10),
-              IgnorePointer(
-                ignoring: modeLocked || selectedPrinter == 'godex',
-                child: Opacity(
-                  opacity: modeLocked || selectedPrinter == 'godex' ? 0.6 : 1,
-                  child: SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment<String>(
-                        value: 'rfid',
-                        label: Text('RFID'),
-                        icon: Icon(Icons.memory_rounded),
-                      ),
-                      ButtonSegment<String>(
-                        value: 'label',
-                        label: Text('Label only'),
-                        icon: Icon(Icons.local_printshop_outlined),
-                      ),
-                    ],
-                    selected: <String>{_batchPrintMode},
-                    onSelectionChanged: (selection) {
-                      if (selection.isEmpty) {
-                        return;
-                      }
-                      final nextMode = selection.first;
-                      if (nextMode == _batchPrintMode) {
-                        return;
-                      }
-                      setState(() {
-                        _batchPrintMode = nextMode;
-                      });
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
-          ),
-        ),
         if (selectedQuantitySource == 'manual') ...[
-          const SizedBox(height: 14),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2346,7 +2238,100 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
               ),
             ),
           ],
+          const SizedBox(height: 14),
         ],
+        ExpansionTile(
+          key: const PageStorageKey<String>('batch_actions_tile'),
+          initiallyExpanded: false,
+          maintainState: true,
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: EdgeInsets.zero,
+          title: Text(
+            'Batch actions',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          children: [
+            IgnorePointer(
+              ignoring: printerLocked,
+              child: Opacity(
+                opacity: printerLocked ? 0.6 : 1,
+                child: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment<String>(
+                      value: 'zebra',
+                      label: Text('Zebra'),
+                      icon: Icon(Icons.memory_rounded),
+                    ),
+                    ButtonSegment<String>(
+                      value: 'godex',
+                      label: Text('GoDEX'),
+                      icon: Icon(Icons.local_printshop_outlined),
+                    ),
+                  ],
+                  selected: <String>{selectedPrinter},
+                  onSelectionChanged: (selection) {
+                    if (selection.isEmpty) {
+                      return;
+                    }
+                    final nextPrinter = normalizePrinterChoice(selection.first);
+                    if (nextPrinter == selectedPrinter) {
+                      return;
+                    }
+                    setState(() {
+                      _batchPrinter = nextPrinter;
+                      if (nextPrinter == 'godex') {
+                        _batchPrintMode = 'label';
+                      }
+                    });
+                  },
+                ),
+              ),
+            ),
+            if (selectedPrinter == 'godex') ...[
+              const SizedBox(height: 8),
+              _MiniIconRow(
+                icon: Icons.info_outline_rounded,
+                text: 'GoDEX label-only chop qiladi, RFID encode qilmaydi.',
+              ),
+            ],
+            const SizedBox(height: 10),
+            IgnorePointer(
+              ignoring: modeLocked || selectedPrinter == 'godex',
+              child: Opacity(
+                opacity: modeLocked || selectedPrinter == 'godex' ? 0.6 : 1,
+                child: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment<String>(
+                      value: 'rfid',
+                      label: Text('RFID'),
+                      icon: Icon(Icons.memory_rounded),
+                    ),
+                    ButtonSegment<String>(
+                      value: 'label',
+                      label: Text('Label only'),
+                      icon: Icon(Icons.local_printshop_outlined),
+                    ),
+                  ],
+                  selected: <String>{_batchPrintMode},
+                  onSelectionChanged: (selection) {
+                    if (selection.isEmpty) {
+                      return;
+                    }
+                    final nextMode = selection.first;
+                    if (nextMode == _batchPrintMode) {
+                      return;
+                    }
+                    setState(() {
+                      _batchPrintMode = nextMode;
+                    });
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 14),
         Row(
           children: [
