@@ -56,6 +56,34 @@ void main() {
     expect(snapshot.batchManualQtyKg, 5.25);
     expect(snapshot.batchTareEnabled, isTrue);
     expect(snapshot.batchTareKg, 0.78);
+    expect(snapshot.printerLabel, 'Printer: ulanmagan');
+  });
+
+  test('printer status label shows selected printer name', () {
+    expect(
+      buildPrinterStatusLabel(
+        printerConnected: true,
+        printerChoice: 'zebra',
+        printerState: 'idle',
+      ),
+      'Printer: zebra: ulangan',
+    );
+    expect(
+      buildPrinterStatusLabel(
+        printerConnected: true,
+        printerChoice: 'godex',
+        printerState: 'processing',
+      ),
+      'Printer: godex: printing',
+    );
+    expect(
+      buildPrinterStatusLabel(
+        printerConnected: false,
+        printerChoice: 'godex',
+        printerState: 'idle',
+      ),
+      'Printer: ulanmagan',
+    );
   });
 
   test('manual print helper disables blank and undersized values', () {

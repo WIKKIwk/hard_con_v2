@@ -2150,7 +2150,11 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         babinaKg == null;
     final printerStatusText = _printerStatusOverride.isNotEmpty
         ? _printerStatusOverride
-        : _snapshot.printerLabel;
+        : buildPrinterStatusLabel(
+            printerConnected: _snapshot.printerLabel != 'Printer: ulanmagan',
+            printerChoice: selectedPrinter,
+            printerState: _snapshot.printerState,
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3870,7 +3874,7 @@ class MonitorSnapshot {
       bridgeCaption: 'Shared state',
       serverLabel: 'API: idle',
       monitorLabel: 'Scale, Zebra, batch va print request holati',
-      printerLabel: 'Printer trace va action holati',
+      printerLabel: 'Printer: ulanmagan',
       printerState: 'idle',
       printerEventKey: '',
       printerEventMessage: '',
@@ -3925,10 +3929,6 @@ class MonitorSnapshot {
 
     final printStatus = _text(printRequest['status'], fallback: 'idle');
     final printerConnected = printer['ok'] == true;
-    final printerMode = _text(
-      printer['print_mode'],
-      fallback: 'trace unavailable',
-    );
     final activePrinterEPC = _text(printer['active_epc']);
     final history =
         (printer['history'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
@@ -3962,14 +3962,14 @@ class MonitorSnapshot {
           ? 'API: online'
           : 'API: offline',
       monitorLabel: batchItem.isEmpty ? 'No active batch' : 'Batch: $batchItem',
-      printerLabel: buildPrinterLabel(
+      printerLabel: buildPrinterStatusLabel(
         printerConnected: printerConnected,
-        printStatus: printStatus,
-        printerMode: printerMode,
-        activePrinterEPC: activePrinterEPC,
-        latestPrinterStatus: latestPrinterStatus,
-        latestPrinterEPC: latestPrinterEPC,
-        latestPrinterError: latestPrinterError,
+        printerChoice: batchPrinter,
+        printerState: derivePrinterState(
+          printStatus: printStatus,
+          latestPrinterStatus: latestPrinterStatus,
+          activePrinterEPC: activePrinterEPC,
+        ),
       ),
       printerState: derivePrinterState(
         printStatus: printStatus,
@@ -3987,6 +3987,7 @@ class MonitorSnapshot {
         latestPrinterStatus: latestPrinterStatus,
         latestPrinterEPC: latestPrinterEPC,
         latestPrinterError: latestPrinterError,
+        printerChoice: batchPrinter,
       ),
       batchActive: batchActive,
       batchItemCode: batchItemCode,
@@ -4099,37 +4100,23 @@ class MonitorSnapshot {
   }
 }
 
-String buildPrinterLabel({
+String buildPrinterStatusLabel({
   required bool printerConnected,
-  required String printStatus,
-  required String printerMode,
-  required String activePrinterEPC,
-  required String latestPrinterStatus,
-  required String latestPrinterEPC,
-  required String latestPrinterError,
+  required String printerChoice,
+  required String printerState,
 }) {
-  if (!printerConnected || printerMode.trim() == 'trace unavailable') {
+  if (!printerConnected) {
     return 'Printer: ulanmagan';
   }
-  final requestState = _text(printStatus, fallback: 'idle').toLowerCase();
-  final historyState = _text(
-    latestPrinterStatus,
-    fallback: 'idle',
-  ).toLowerCase();
-  final epc = _text(latestPrinterEPC, fallback: activePrinterEPC);
-
-  if (activePrinterEPC.isNotEmpty ||
-      requestState == 'processing' ||
-      historyState == 'processing') {
-    return epc.isEmpty ? 'Printer: printing' : 'Printer: printing • $epc';
+  final printerName = normalizePrinterChoice(printerChoice) == 'godex'
+      ? 'godex'
+      : 'zebra';
+  switch (printerState.trim().toLowerCase()) {
+    case 'processing':
+      return 'Printer: $printerName: printing';
+    default:
+      return 'Printer: $printerName: ulangan';
   }
-  if (historyState == 'done' || requestState == 'done') {
-    return 'Printer: ulangan';
-  }
-  if (historyState == 'error' || requestState == 'error') {
-    return 'Printer: ulangan';
-  }
-  return 'Printer: ulangan';
 }
 
 String normalizePrinterChoice(String printer) {
@@ -4256,6 +4243,7 @@ String buildPrinterEventMessage({
   required String latestPrinterStatus,
   required String latestPrinterEPC,
   required String latestPrinterError,
+  required String printerChoice,
 }) {
   final state = derivePrinterState(
     printStatus: printStatus,
@@ -4264,14 +4252,21 @@ String buildPrinterEventMessage({
   );
   final epc = _text(latestPrinterEPC);
   final err = _text(latestPrinterError);
+  final printerName = normalizePrinterChoice(printerChoice) == 'godex'
+      ? 'godex'
+      : 'zebra';
   if (state == 'done') {
-    return epc.isEmpty ? 'Printer: print qildi' : 'Printer: print qildi • $epc';
+    return epc.isEmpty
+        ? 'Printer: $printerName: print qildi'
+        : 'Printer: $printerName: print qildi • $epc';
   }
   if (state == 'error') {
     if (err.isNotEmpty) {
-      return 'Printer: failed • $err';
+      return 'Printer: $printerName: failed • $err';
     }
-    return epc.isEmpty ? 'Printer: failed' : 'Printer: failed • $epc';
+    return epc.isEmpty
+        ? 'Printer: $printerName: failed'
+        : 'Printer: $printerName: failed • $epc';
   }
   return '';
 }
