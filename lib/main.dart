@@ -2299,49 +2299,53 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: TextField(
-                        controller: _manualQtyController,
-                        enabled: !_batchActionLoading && !_manualPrintLoading,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        inputFormatters: [
-                          FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-                        ],
-                        maxLines: 1,
-                        minLines: 1,
-                        textAlignVertical: TextAlignVertical.center,
-                        decoration: InputDecoration(
-                          labelText: 'Manual brutto kg',
-                          suffixText: 'kg',
-                          hintText: '5',
-                          errorText: manualQtyInvalid
-                              ? 'Masalan: 5 yoki 4.22'
-                              : null,
-                          filled: true,
-                          fillColor: scheme.surfaceContainerLow,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 18,
+                      child: SizedBox(
+                        height: 56,
+                        child: TextField(
+                          controller: _manualQtyController,
+                          enabled: !_batchActionLoading && !_manualPrintLoading,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
                           ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(
-                              color: scheme.outlineVariant,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                              RegExp(r'[0-9.,]'),
+                            ),
+                          ],
+                          textAlignVertical: TextAlignVertical.center,
+                          decoration: InputDecoration(
+                            labelText: 'Manual brutto kg',
+                            suffixText: 'kg',
+                            hintText: '5',
+                            errorText: manualQtyInvalid
+                                ? 'Masalan: 5 yoki 4.22'
+                                : null,
+                            filled: true,
+                            fillColor: scheme.surfaceContainerLow,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(
+                                color: scheme.outlineVariant,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(
+                                color: scheme.primary,
+                                width: 1.4,
+                              ),
                             ),
                           ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(
-                              color: scheme.primary,
-                              width: 1.4,
-                            ),
-                          ),
+                          onChanged: (_) => setState(() {}),
                         ),
-                        onChanged: (_) => setState(() {}),
                       ),
                     ),
                     const SizedBox(width: 10),
