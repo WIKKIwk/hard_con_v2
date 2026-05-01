@@ -426,6 +426,7 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
   bool _erpSetupLoading = false;
   bool _warehouseSetupLoading = false;
   bool _archiveLoading = false;
+  String _archivePrintLoadingSessionId = '';
   bool _connected = false;
   bool _erpSetupExpanded = false;
   bool _warehouseSetupExpanded = false;
@@ -1448,6 +1449,119 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
     }
   }
 
+  String _currentArchivePrinterChoice() {
+    final livePrinter = _snapshot.livePrinterChoice;
+    if (livePrinter.isNotEmpty) {
+      return livePrinter;
+    }
+    if (_snapshot.printerLabel.trim().toLowerCase() == 'ulanmagan') {
+      return '';
+    }
+    final batchPrinter = normalizePrinterChoice(_batchPrinter);
+    if (batchPrinter.isNotEmpty) {
+      return batchPrinter;
+    }
+    return '';
+  }
+
+  Future<void> _confirmArchivePrint(MobileArchiveSession session) async {
+    if (_archivePrintLoadingSessionId.isNotEmpty || !mounted) {
+      return;
+    }
+    final itemName = session.displayItemName;
+    final qtyText =
+        '${formatCompactKg(session.totalQty)} ${session.displayUnit}';
+    final batchTime = session.endedAt.isNotEmpty
+        ? formatArchiveTimestamp(session.endedAt)
+        : formatArchiveTimestamp(session.startedAt);
+    final shouldPrint = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Batch QR print'),
+          content: Text(
+            [
+              'Shu batch uchun QR print qilamizmi?',
+              '',
+              'Mahsulot: ${itemName.isEmpty ? '-' : itemName}',
+              'Jami: $qtyText',
+              'Sana: $batchTime',
+            ].join('\n'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Yo\'q'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Ha'),
+            ),
+          ],
+        );
+      },
+    );
+    if (shouldPrint == true) {
+      await _printArchiveSession(session);
+    }
+  }
+
+  Future<void> _printArchiveSession(MobileArchiveSession session) async {
+    if (_archivePrintLoadingSessionId.isNotEmpty || !mounted) {
+      return;
+    }
+    final printer = _currentArchivePrinterChoice();
+    if (printer.isEmpty) {
+      setState(() {
+        _archiveError = 'Printer ulanmagan';
+      });
+      return;
+    }
+
+    final requestBody = {'session_id': session.sessionId, 'printer': printer};
+
+    setState(() {
+      _archivePrintLoadingSessionId = session.sessionId;
+      _archiveError = '';
+    });
+    try {
+      final response = await _client
+          .post(
+            _apiUri('/v1/mobile/archive/print'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(requestBody),
+          )
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode < 200 || response.statusCode > 299) {
+        final payload = jsonDecode(response.body) as Map<String, dynamic>;
+        throw Exception(
+          _text(payload['error'], fallback: 'Archive print failed'),
+        );
+      }
+      if (!mounted) {
+        return;
+      }
+      final displayName = session.displayItemName.isEmpty
+          ? 'Batch'
+          : session.displayItemName;
+      setState(() {
+        _archivePrintLoadingSessionId = '';
+      });
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text('$displayName uchun QR print yuborildi')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _archivePrintLoadingSessionId = '';
+        _archiveError = error.toString();
+      });
+    }
+  }
+
   Future<void> _submitERPSetup() async {
     if (_erpSetupLoading) {
       return;
@@ -2037,89 +2151,95 @@ class _OperatorDashboardPageState extends State<OperatorDashboardPage> {
         ? '0.000 $unit'
         : '${session.totalQty.toStringAsFixed(3)} $unit';
 
-    return ExpansionTile(
-      tilePadding: EdgeInsets.zero,
-      childrenPadding: const EdgeInsets.only(left: 12, right: 0, bottom: 12),
-      shape: const Border(),
-      collapsedShape: const Border(),
-      backgroundColor: Colors.transparent,
-      collapsedBackgroundColor: Colors.transparent,
-      iconColor: scheme.primary,
-      collapsedIconColor: scheme.primary,
-      leading: Icon(
-        session.active ? Icons.timelapse_rounded : Icons.archive_outlined,
-        color: session.active ? scheme.tertiary : scheme.primary,
-      ),
-      title: Text(
-        title.isEmpty ? '-' : title,
-        style: theme.textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w700,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPress: _archivePrintLoadingSessionId.isNotEmpty
+          ? null
+          : () => unawaited(_confirmArchivePrint(session)),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(left: 12, right: 0, bottom: 12),
+        shape: const Border(),
+        collapsedShape: const Border(),
+        backgroundColor: Colors.transparent,
+        collapsedBackgroundColor: Colors.transparent,
+        iconColor: scheme.primary,
+        collapsedIconColor: scheme.primary,
+        leading: Icon(
+          session.active ? Icons.timelapse_rounded : Icons.archive_outlined,
+          color: session.active ? scheme.tertiary : scheme.primary,
         ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: scheme.onSurfaceVariant,
+        title: Text(
+          title.isEmpty ? '-' : title,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
         ),
-      ),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
-            totalLabel,
-            style: theme.textTheme.labelLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
+        subtitle: Text(
+          subtitle,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
           ),
-          const SizedBox(height: 2),
-          Text(
-            '${session.printCount} print',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
+        ),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              totalLabel,
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
             ),
-          ),
-        ],
-      ),
-      children: [
-        if (session.prints.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-            child: Text(
-              "Print history hali yo'q.",
+            const SizedBox(height: 2),
+            Text(
+              '${session.printCount} print',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),
             ),
-          )
-        else
-          ...session.prints.map(
-            (entry) => ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                Icons.playlist_add_check_rounded,
-                size: 18,
-                color: scheme.primary,
-              ),
-              title: Text(
-                '${entry.qty.toStringAsFixed(3)} ${entry.unit}',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              subtitle: Text(
-                [
-                  formatArchiveTimestamp(entry.printedAt),
-                  if (entry.draftName.isNotEmpty) entry.draftName,
-                ].join(' • '),
+          ],
+        ),
+        children: [
+          if (session.prints.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: Text(
+                "Print history hali yo'q.",
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
               ),
+            )
+          else
+            ...session.prints.map(
+              (entry) => ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  Icons.playlist_add_check_rounded,
+                  size: 18,
+                  color: scheme.primary,
+                ),
+                title: Text(
+                  '${entry.qty.toStringAsFixed(3)} ${entry.unit}',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                subtitle: Text(
+                  [
+                    formatArchiveTimestamp(entry.printedAt),
+                    if (entry.draftName.isNotEmpty) entry.draftName,
+                  ].join(' • '),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 
